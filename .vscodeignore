@@ -13,11 +13,13 @@ vsc-extension-quickstart.md
 .github/**
 
 # .NET build artifacts
-**/bin/**
 **/obj/**
 *.user
 *.suo
 *.cache
+
+# Allow debug adapter DLL
+!XsltDebugger.DebugAdapter/bin/Debug/net8.0/XsltDebugger.DebugAdapter.dll
 
 # OS generated files
 .DS_Store
