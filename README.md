@@ -33,28 +33,70 @@ XSLT Debugger is a Visual Studio Code extension that lets you debug XSLT stylesh
 
 ### Setting Up a Debug Configuration
 
-1. Open an XSLT file in VS Code
-2. Go to Run and Debug view (Ctrl+Shift+D)
-3. Click "create a launch.json file" and select "XSLT"
-4. Configure the launch settings:
-   ```json
-   {
-     "type": "xslt",
-     "request": "launch",
-     "name": "Debug XSLT",
-     "stylesheet": "${file}",
-     "xml": "${workspaceFolder}/data/input.xml",
-     "engine": "compiled",
-     "stopOnEntry": false
-   }
-   ```
+Create a `.vscode/launch.json` file in your project workspace:
 
-### Configuration Options
+```json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "xslt",
+      "request": "launch",
+      "name": "Debug XSLT",
+      "engine": "compiled",
+      "stylesheet": "${workspaceFolder}/ShipmentConf.xslt",
+      "xml": "${workspaceFolder}/ShipmentConf.xml",
+      "stopOnEntry": false
+    }
+  ]
+}
+```
 
-- `stylesheet`: Path to the XSLT stylesheet (defaults to current file)
-- `xml`: Path to the input XML document
-- `engine`: Execution engine (`"compiled"` or `"saxon"`)
-- `stopOnEntry`: Pause at the start of transformation
+### Configuration Parameters
+
+| Parameter | Type | Required | Description | Example |
+|-----------|------|----------|-------------|---------|
+| `type` | string | ✅ | Must be `"xslt"` | `"xslt"` |
+| `request` | string | ✅ | Must be `"launch"` | `"launch"` |
+| `name` | string | ✅ | Display name in debug menu | `"Debug XSLT"` |
+| `engine` | string | ❌ | Engine type (default: `"compiled"`) | `"compiled"` |
+| `stylesheet` | string | ✅ | Path to XSLT file | `"${file}"` or `"${workspaceFolder}/transform.xslt"` |
+| `xml` | string | ✅ | Path to input XML | `"${workspaceFolder}/data.xml"` |
+| `stopOnEntry` | boolean | ❌ | Pause at transform start | `false` |
+
+### Variable Substitutions
+
+- `${file}`: Currently open file in editor
+- `${workspaceFolder}`: Root of your workspace
+- `${workspaceFolder}/relative/path.xslt`: Specific file in workspace
+
+### Example Configurations
+
+**Debug currently open XSLT file:**
+```json
+{
+  "type": "xslt",
+  "request": "launch",
+  "name": "Debug Current XSLT",
+  "engine": "compiled",
+  "stylesheet": "${file}",
+  "xml": "${workspaceFolder}/input.xml",
+  "stopOnEntry": false
+}
+```
+
+**Debug with stop on entry:**
+```json
+{
+  "type": "xslt",
+  "request": "launch",
+  "name": "Debug XSLT (Stop at Start)",
+  "engine": "compiled",
+  "stylesheet": "${workspaceFolder}/transform.xslt",
+  "xml": "${workspaceFolder}/data.xml",
+  "stopOnEntry": true
+}
+```
 
 ### Debugging Features
 
@@ -100,6 +142,12 @@ The extension consists of:
 - **Instrumentation Engine**: Dynamically modifies XSLT to insert debug hooks
 
 ## Recent Fixes
+
+### v0.0.1 - Debug Adapter Packaging Fix
+- **Issue**: Extension failed to activate with "Couldn't find a debug adapter descriptor" error
+- **Root Cause**: `.vscodeignore` was excluding the debug adapter DLL from the package
+- **Solution**: Modified `.vscodeignore` to include `XsltDebugger.DebugAdapter/bin/Debug/net8.0/XsltDebugger.DebugAdapter.dll`
+- **Impact**: Extension now properly packages and includes the .NET debug adapter (package size: 16.31 MB)
 
 ### v0.0.1 - Inline C# Compilation Fix
 - **Issue**: Inline C# scripts in XSLT stylesheets would fail to compile when containing `using` statements that conflicted with the generated prelude
