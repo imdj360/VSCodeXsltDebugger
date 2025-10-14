@@ -245,7 +245,16 @@ internal sealed class DapServer
             return Task.CompletedTask;
         }
 
-        IXsltEngine engine = new XsltCompiledEngine();
+        IXsltEngine engine;
+        try
+        {
+            engine = XsltEngineFactory.CreateEngine(engineType);
+        }
+        catch (ArgumentException ex)
+        {
+            SendResponse(requestSeq, "launch", new { }, success: false, message: ex.Message);
+            return Task.CompletedTask;
+        }
 
         _state.SetEngine(engine);
         var allBreakpoints = _state.GetAllBreakpoints();

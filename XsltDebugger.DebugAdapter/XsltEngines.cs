@@ -12,6 +12,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Scripting;
 using Microsoft.CodeAnalysis.Scripting;
+using Saxon.Api;
 
 namespace XsltDebugger.DebugAdapter;
 
@@ -36,6 +37,12 @@ public class RoslynEvaluator
     }
 }
 
+public enum XsltEngineType
+{
+    Compiled,
+    SaxonNet
+}
+
 public interface IXsltEngine
 {
     Task StartAsync(string stylesheet, string xml, bool stopOnEntry);
@@ -44,6 +51,28 @@ public interface IXsltEngine
     Task StepInAsync();
     Task StepOutAsync();
     void SetBreakpoints(IEnumerable<(string file, int line)> breakpoints);
+}
+
+public static class XsltEngineFactory
+{
+    public static IXsltEngine CreateEngine(XsltEngineType engineType)
+    {
+        return engineType switch
+        {
+            XsltEngineType.Compiled => new XsltCompiledEngine(),
+            XsltEngineType.SaxonNet => new SaxonEngine(),
+            _ => throw new ArgumentException($"Unsupported engine type: {engineType}", nameof(engineType))
+        };
+    }
+
+    public static IXsltEngine CreateEngine(string engineType)
+    {
+        if (Enum.TryParse<XsltEngineType>(engineType, true, out var type))
+        {
+            return CreateEngine(type);
+        }
+        throw new ArgumentException($"Invalid engine type: {engineType}", nameof(engineType));
+    }
 }
 
 public class XsltDebugExtension
@@ -102,8 +131,7 @@ public class XsltCompiledEngine : IXsltEngine
 {
     private const string DebugNamespace = "urn:xslt-debugger";
 
-    private readonly object _sync = new();
-    private static readonly HashSet<string> InlineInstrumentationTargets = new(StringComparer.OrdinalIgnoreCase)
+    internal static readonly HashSet<string> InlineInstrumentationTargets = new(StringComparer.OrdinalIgnoreCase)
     {
         "template",
         "if",
@@ -116,7 +144,7 @@ public class XsltCompiledEngine : IXsltEngine
         "processing-instruction"
     };
 
-    private static readonly HashSet<string> ElementsDisallowingChildInstrumentation = new(StringComparer.OrdinalIgnoreCase)
+    internal static readonly HashSet<string> ElementsDisallowingChildInstrumentation = new(StringComparer.OrdinalIgnoreCase)
     {
         "apply-templates",
         "call-template",
@@ -128,6 +156,8 @@ public class XsltCompiledEngine : IXsltEngine
         "message",
         "text"
     };
+
+    private readonly object _sync = new();
     private List<(string file, int line)> _breakpoints = new();
     private TaskCompletionSource<bool>? _pauseTcs;
     private string _currentStylesheet = string.Empty;
@@ -163,6 +193,18 @@ public class XsltCompiledEngine : IXsltEngine
             if (xdoc.Root == null || !IsXsltStylesheet(xdoc.Root))
             {
                 XsltEngineManager.NotifyOutput("The specified file is not a valid XSLT stylesheet.");
+                XsltEngineManager.NotifyTerminated(1);
+                return Task.CompletedTask;
+            }
+
+            // Validate engine compatibility
+            try
+            {
+                XsltCompiledEngine.ValidateEngineCompatibility(stylesheet, XsltEngineType.Compiled);
+            }
+            catch (Exception ex)
+            {
+                XsltEngineManager.NotifyOutput($"Engine validation failed: {ex.Message}");
                 XsltEngineManager.NotifyTerminated(1);
                 return Task.CompletedTask;
             }
@@ -510,6 +552,21 @@ public class XsltCompiledEngine : IXsltEngine
         return true;
     }
 
+    private static List<string> ExtractUsingStatements(string code)
+    {
+        var usings = new List<string>();
+        var lines = code.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+        foreach (var line in lines)
+        {
+            var trimmed = line.Trim();
+            if (trimmed.StartsWith("using ", StringComparison.Ordinal))
+            {
+                usings.Add(trimmed);
+            }
+        }
+        return usings;
+    }
+
     private object CompileAndCreateExtensionObject(string code)
     {
         var classCode = code.Contains("class", StringComparison.OrdinalIgnoreCase)
@@ -578,26 +635,603 @@ public class XsltCompiledEngine : IXsltEngine
         return Activator.CreateInstance(chosen) ?? throw new Exception("Failed to instantiate compiled extension type.");
     }
 
-    private static HashSet<string> ExtractUsingStatements(string code)
+    internal static bool IsXsltStylesheet(XElement root)
     {
-        var usings = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var lines = code.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+        var ns = root.Name.NamespaceName;
+        return ns == "http://www.w3.org/1999/XSL/Transform" && (root.Name.LocalName == "stylesheet" || root.Name.LocalName == "transform");
+    }
 
-        foreach (var line in lines)
+    public static decimal GetXsltVersion(XElement root)
+    {
+        if (!IsXsltStylesheet(root))
         {
-            var trimmed = line.Trim();
-            if (trimmed.StartsWith("using ", StringComparison.OrdinalIgnoreCase) && trimmed.EndsWith(";"))
+            return 0;
+        }
+
+        var versionAttr = root.Attribute("version");
+        if (versionAttr != null && decimal.TryParse(versionAttr.Value, out var version))
+        {
+            return version;
+        }
+
+        // Default version if not specified
+        return 1.0m;
+    }
+
+    public static bool HasInlineCSharp(XDocument doc)
+    {
+        var msxsl = "urn:schemas-microsoft-com:xslt";
+        return doc.Descendants(XName.Get("script", msxsl)).Any();
+    }
+
+    public static void ValidateEngineCompatibility(string stylesheet, XsltEngineType engineType)
+    {
+        XDocument xdoc;
+        try
+        {
+            xdoc = XDocument.Load(stylesheet, LoadOptions.SetLineInfo);
+        }
+        catch (Exception ex)
+        {
+            throw new Exception($"Failed to load XSLT stylesheet for validation: {ex.Message}");
+        }
+
+        if (xdoc.Root == null || !IsXsltStylesheet(xdoc.Root))
+        {
+            throw new Exception("The specified file is not a valid XSLT stylesheet.");
+        }
+
+        var version = GetXsltVersion(xdoc.Root);
+        var hasInlineCSharp = HasInlineCSharp(xdoc);
+
+        if (engineType == XsltEngineType.Compiled)
+        {
+            // Compiled engine supports XSLT 1.0 and inline C#
+            if (version >= 2.0m)
             {
-                usings.Add(trimmed);
+                XsltEngineManager.NotifyOutput($"Warning: Using 'compiled' engine with XSLT {version}. XSLT 2.0+ features may not be fully supported. Consider using 'saxon' engine for XSLT 2.0/3.0.");
+            }
+        }
+        else if (engineType == XsltEngineType.SaxonNet)
+        {
+            // Saxon engine supports XSLT 2.0/3.0 but not inline C#
+            if (version < 2.0m)
+            {
+                XsltEngineManager.NotifyOutput($"Warning: Using Saxon engine with XSLT {version}. Saxon is optimized for XSLT 2.0/3.0. Consider using 'compiled' engine for XSLT 1.0.");
+            }
+
+            if (hasInlineCSharp)
+            {
+                throw new Exception("Saxon engine does not support inline C# scripts. Use 'compiled' engine for stylesheets with msxsl:script elements.");
+            }
+        }
+    }
+}
+
+public class SaxonEngine : IXsltEngine
+{
+    private const string DebugNamespace = "urn:xslt-debugger";
+
+    private readonly object _sync = new();
+    private List<(string file, int line)> _breakpoints = new();
+    private TaskCompletionSource<bool>? _pauseTcs;
+    private string _currentStylesheet = string.Empty;
+    private bool _nextStepRequested;
+    private Processor? _processor;
+    private XsltTransformer? _transformer;
+
+    public async Task StartAsync(string stylesheet, string xml, bool stopOnEntry)
+    {
+        await Task.Run(() =>
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(stylesheet) || string.IsNullOrWhiteSpace(xml))
+                {
+                    XsltEngineManager.NotifyOutput("Launch request missing stylesheet or xml path.");
+                    XsltEngineManager.NotifyTerminated(1);
+                    return;
+                }
+
+                _currentStylesheet = NormalizePath(stylesheet);
+                var inputPath = NormalizePath(xml);
+
+                // Initialize Saxon processor
+                _processor = new Processor();
+
+                // Enable XSLT 3.0 features
+                _processor.SetProperty("http://saxon.sf.net/feature/xsltVersion", "3.0");
+
+                var compiler = _processor.NewXsltCompiler();
+                compiler.XsltLanguageVersion = "3.0";
+
+                // Capture compilation errors
+                var errorList = new List<StaticError>();
+                compiler.ErrorList = errorList;
+
+                XDocument xdoc;
+                try
+                {
+                    xdoc = XDocument.Load(stylesheet, LoadOptions.SetLineInfo);
+                }
+                catch (Exception ex)
+                {
+                    XsltEngineManager.NotifyOutput($"Failed to load XSLT stylesheet: {ex.Message}");
+                    XsltEngineManager.NotifyTerminated(1);
+                    return;
+                }
+
+                if (xdoc.Root == null || !IsXsltStylesheet(xdoc.Root))
+                {
+                    XsltEngineManager.NotifyOutput("The specified file is not a valid XSLT stylesheet.");
+                    XsltEngineManager.NotifyTerminated(1);
+                    return;
+                }
+
+                // Validate engine compatibility
+                try
+                {
+                    XsltCompiledEngine.ValidateEngineCompatibility(stylesheet, XsltEngineType.SaxonNet);
+                }
+                catch (Exception ex)
+                {
+                    XsltEngineManager.NotifyOutput($"Engine validation failed: {ex.Message}");
+                    XsltEngineManager.NotifyTerminated(1);
+                    return;
+                }
+
+                // Instrument the stylesheet for debugging
+                // Note: Skip instrumentation for Saxon engine as it's still in development
+                var version = XsltCompiledEngine.GetXsltVersion(xdoc.Root);
+                XsltEngineManager.NotifyOutput($"XSLT version detected: {version}");
+
+                // Debugging instrumentation is not yet supported for Saxon engine
+                // Run transforms only without breakpoint debugging
+                bool useDebugging = false; // TODO: Implement Saxon debugging support
+
+                if (useDebugging)
+                {
+                    // Register extension function for debugging
+                    var debugExtension = new SaxonDebugExtension(this, _currentStylesheet);
+                    _processor.RegisterExtensionFunction(debugExtension);
+
+                    EnsureDebugNamespace(xdoc);
+                    InstrumentStylesheet(xdoc);
+                }
+                else
+                {
+                    XsltEngineManager.NotifyOutput("Note: Breakpoint debugging not yet supported for Saxon engine. Running transform only.");
+                }
+
+                // Compile the stylesheet
+                XsltEngineManager.NotifyOutput("Compiling stylesheet...");
+                try
+                {
+                    using (var reader = xdoc.CreateReader())
+                    {
+                        var documentBuilder = _processor.NewDocumentBuilder();
+                        var stylesheetDoc = documentBuilder.Build(reader);
+                        var executable = compiler.Compile(stylesheetDoc);
+                        _transformer = executable.Load();
+                    }
+                    XsltEngineManager.NotifyOutput("Stylesheet compiled successfully.");
+                }
+                catch (Exception compileEx)
+                {
+                    XsltEngineManager.NotifyOutput($"Saxon compilation error: {compileEx.Message}");
+
+                    // Display detailed compilation errors
+                    if (errorList.Count > 0)
+                    {
+                        XsltEngineManager.NotifyOutput($"\n{errorList.Count} compilation error(s) found:");
+                        for (int i = 0; i < errorList.Count; i++)
+                        {
+                            var error = errorList[i];
+                            var location = error.ModuleUri != null ? $" at {error.ModuleUri}" : "";
+                            var line = error.LineNumber > 0 ? $" line {error.LineNumber}" : "";
+                            var col = error.ColumnNumber > 0 ? $" column {error.ColumnNumber}" : "";
+                            XsltEngineManager.NotifyOutput($"  [{i + 1}]{location}{line}{col}:");
+                            XsltEngineManager.NotifyOutput($"      {error.Message}");
+                        }
+                    }
+                    else if (compileEx.InnerException != null)
+                    {
+                        XsltEngineManager.NotifyOutput($"Inner exception: {compileEx.InnerException.Message}");
+                    }
+
+                    XsltEngineManager.NotifyTerminated(1);
+                    return;
+                }
+
+                // Load input document
+                XsltEngineManager.NotifyOutput("Loading input XML document...");
+                var inputBuilder = _processor.NewDocumentBuilder();
+                var inputDoc = inputBuilder.Build(new Uri(inputPath));
+
+                _transformer.InitialContextNode = inputDoc;
+
+                // Skip stopOnEntry for XSLT 3.0 since debugging not supported yet
+                if (stopOnEntry && useDebugging)
+                {
+                    PauseForBreakpoint(_currentStylesheet, 0, DebugStopReason.Entry, null);
+                }
+                else if (stopOnEntry && !useDebugging)
+                {
+                    XsltEngineManager.NotifyOutput("Ignoring stopOnEntry for XSLT 3.0 (debugging not yet supported)");
+                }
+
+                // Set up output
+                var outPath = Path.ChangeExtension(_currentStylesheet, ".out.xml");
+                XsltEngineManager.NotifyOutput($"Writing transform output to: {outPath}");
+
+                using (var writer = new StreamWriter(outPath))
+                {
+                    var serializer = _processor.NewSerializer(writer);
+                    _transformer.Run(serializer);
+                }
+
+                XsltEngineManager.NotifyTerminated(0);
+            }
+            catch (Exception ex)
+            {
+                XsltEngineManager.NotifyOutput($"Transform failed: {ex}");
+                XsltEngineManager.NotifyTerminated(1);
+            }
+            finally
+            {
+                lock (_sync)
+                {
+                    _pauseTcs?.TrySetResult(true);
+                    _pauseTcs = null;
+                }
+            }
+        });
+    }
+
+    public Task ContinueAsync()
+    {
+        lock (_sync)
+        {
+            _nextStepRequested = false;
+            _pauseTcs?.TrySetResult(true);
+            _pauseTcs = null;
+        }
+        return Task.CompletedTask;
+    }
+
+    public Task StepOverAsync() => ResumeWithStepAsync();
+
+    public Task StepInAsync() => ResumeWithStepAsync();
+
+    public Task StepOutAsync() => ContinueAsync();
+
+    private Task ResumeWithStepAsync()
+    {
+        lock (_sync)
+        {
+            _nextStepRequested = true;
+            _pauseTcs?.TrySetResult(true);
+            _pauseTcs = null;
+        }
+        return Task.CompletedTask;
+    }
+
+    public void SetBreakpoints(IEnumerable<(string file, int line)> bps)
+    {
+        var normalized = new List<(string file, int line)>();
+        foreach (var bp in bps)
+        {
+            var f = NormalizePath(bp.file);
+            normalized.Add((f, bp.line));
+        }
+        _breakpoints = normalized;
+    }
+
+    internal void RegisterBreakpointHit(string file, int line, XdmNode? contextNode = null)
+    {
+        if (line < 0)
+        {
+            return;
+        }
+
+        var normalized = NormalizePath(file);
+        var stepRequested = ConsumeStepRequest();
+
+        if (IsBreakpointHit(normalized, line))
+        {
+            PauseForBreakpoint(normalized, line, DebugStopReason.Breakpoint, contextNode);
+            return;
+        }
+
+        if (stepRequested)
+        {
+            PauseForBreakpoint(normalized, line, DebugStopReason.Step, contextNode);
+        }
+    }
+
+    private bool IsBreakpointHit(string file, int line)
+    {
+        foreach (var bp in _breakpoints)
+        {
+            if (string.Equals(bp.file, file, StringComparison.OrdinalIgnoreCase) && bp.line == line)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void PauseForBreakpoint(string file, int line, DebugStopReason reason, XdmNode? context)
+    {
+        TaskCompletionSource<bool>? localTcs;
+        lock (_sync)
+        {
+            _pauseTcs = new TaskCompletionSource<bool>();
+            localTcs = _pauseTcs;
+        }
+
+        // For Saxon, we don't convert XdmNode to XPathNavigator for now
+        // TODO: Implement proper conversion if needed
+        XPathNavigator? navigator = null;
+
+        XsltEngineManager.NotifyStopped(file, line, reason, navigator);
+
+        try
+        {
+            localTcs?.Task.Wait();
+        }
+        catch
+        {
+            // Ignore interruption
+        }
+    }
+
+    private bool ConsumeStepRequest()
+    {
+        lock (_sync)
+        {
+            if (_nextStepRequested)
+            {
+                _nextStepRequested = false;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static string NormalizePath(string path)
+    {
+        var result = path ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(result))
+        {
+            if (result.StartsWith("file://", StringComparison.OrdinalIgnoreCase))
+            {
+                try { result = new Uri(result).LocalPath; } catch { }
+            }
+            try { result = Path.GetFullPath(result); } catch { }
+        }
+        return result;
+    }
+
+    private void EnsureDebugNamespace(XDocument doc)
+    {
+        if (doc.Root == null)
+        {
+            return;
+        }
+
+        var existing = doc.Root.GetNamespaceOfPrefix("dbg");
+        if (existing == null || existing.NamespaceName != DebugNamespace)
+        {
+            doc.Root.SetAttributeValue(XNamespace.Xmlns + "dbg", DebugNamespace);
+        }
+    }
+
+    private void InstrumentStylesheet(XDocument doc)
+    {
+        if (doc.Root == null)
+        {
+            return;
+        }
+
+        var xsltNamespace = doc.Root.Name.Namespace;
+        var candidates = doc
+            .Descendants()
+            .Where(e => ShouldInstrument(e, xsltNamespace))
+            .Select(e => (Element: e, Line: GetLineNumber(e)))
+            .Where(tuple => tuple.Line.HasValue)
+            .ToList();
+
+        foreach (var (element, line) in candidates)
+        {
+            if (element.Parent == null)
+            {
+                continue;
+            }
+
+            var isXsltElement = element.Name.Namespace == xsltNamespace;
+            var breakCall = new XElement(
+                xsltNamespace + "value-of",
+                new XAttribute("select", $"dbg:break({line!.Value}, .)"));
+
+            if (CanInsertAsFirstChild(element, isXsltElement))
+            {
+                element.AddFirst(breakCall);
+            }
+            else
+            {
+                element.AddBeforeSelf(breakCall);
+            }
+        }
+    }
+
+    private static bool ShouldInstrument(XElement element, XNamespace xsltNamespace)
+    {
+        if (element.Parent == null)
+        {
+            return false;
+        }
+
+        if (element.Name.Namespace == xsltNamespace)
+        {
+            var localName = element.Name.LocalName;
+            return localName switch
+            {
+                "stylesheet" or "transform" => false,
+                "attribute-set" or "decimal-format" or "import" or "include" or "key" or "namespace-alias" or "output" or "preserve-space" or "strip-space" => false,
+                "param" or "variable" or "with-param" => false,
+                _ => true
+            };
+        }
+
+        var nearestXsltAncestor = element.Ancestors().FirstOrDefault(a => a.Name.Namespace == xsltNamespace);
+        if (nearestXsltAncestor == null)
+        {
+            return false;
+        }
+
+        var ancestorLocal = nearestXsltAncestor.Name.LocalName;
+        if (ancestorLocal is "stylesheet" or "transform")
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static int? GetLineNumber(XElement element)
+    {
+        if (element is IXmlLineInfo info && info.HasLineInfo())
+        {
+            return info.LineNumber;
+        }
+        return null;
+    }
+
+    private static bool CanInsertAsFirstChild(XElement element, bool isXsltElement)
+    {
+        if (element == null)
+        {
+            return false;
+        }
+
+        if (!isXsltElement)
+        {
+            return false;
+        }
+
+        var parent = element.Parent;
+        var localName = element.Name.LocalName;
+
+        if (XsltCompiledEngine.InlineInstrumentationTargets.Contains(localName))
+        {
+            return true;
+        }
+
+        if (parent != null)
+        {
+            var parentLocal = parent.Name.LocalName;
+            if (string.Equals(parentLocal, "stylesheet", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(parentLocal, "transform", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(parentLocal, "choose", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
             }
         }
 
-        return usings;
+        if (element.IsEmpty)
+        {
+            return false;
+        }
+
+        if (XsltCompiledEngine.ElementsDisallowingChildInstrumentation.Contains(localName))
+        {
+            return false;
+        }
+
+        return true;
     }
 
-    private static bool IsXsltStylesheet(XElement root)
+    internal static bool IsXsltStylesheet(XElement root)
     {
         var ns = root.Name.NamespaceName;
         return ns == "http://www.w3.org/1999/XSL/Transform" && (root.Name.LocalName == "stylesheet" || root.Name.LocalName == "transform");
     }
 }
+
+public class SaxonDebugExtension : ExtensionFunctionDefinition
+{
+    private readonly SaxonEngine _engine;
+    private readonly string _stylesheetPath;
+
+    public SaxonDebugExtension(SaxonEngine engine, string stylesheetPath)
+    {
+        _engine = engine;
+        _stylesheetPath = stylesheetPath;
+    }
+
+    public override QName FunctionName => new QName("urn:xslt-debugger", "break");
+
+    public override int MinimumNumberOfArguments => 1;
+
+    public override int MaximumNumberOfArguments => 2;
+
+    public override XdmSequenceType[] ArgumentTypes => new[]
+    {
+        new XdmSequenceType(XdmAtomicType.BuiltInAtomicType(QName.XS_DOUBLE), ' '),
+        new XdmSequenceType(XdmAnyNodeType.Instance, ' ')
+    };
+
+    public override XdmSequenceType ResultType(XdmSequenceType[] ArgumentTypes)
+    {
+        return new XdmSequenceType(XdmAtomicType.BuiltInAtomicType(QName.XS_STRING), ' ');
+    }
+
+    public override ExtensionFunctionCall MakeFunctionCall()
+    {
+        return new SaxonDebugExtensionCall(_engine, _stylesheetPath);
+    }
+}
+
+public class SaxonDebugExtensionCall : ExtensionFunctionCall
+{
+    private readonly SaxonEngine _engine;
+    private readonly string _stylesheetPath;
+
+    public SaxonDebugExtensionCall(SaxonEngine engine, string stylesheetPath)
+    {
+        _engine = engine;
+        _stylesheetPath = stylesheetPath;
+    }
+
+    public override IEnumerator<XdmItem> Call(IEnumerator<XdmItem>[] arguments, DynamicContext context)
+    {
+        var lineArg = arguments[0];
+        if (!lineArg.MoveNext())
+        {
+            return EmptyEnumerator<XdmItem>.INSTANCE;
+        }
+
+        var lineValue = lineArg.Current;
+        if (lineValue is XdmAtomicValue atomicValue)
+        {
+            var lineNumber = Convert.ToDouble(atomicValue.Value);
+            var line = (int)Math.Round(lineNumber);
+
+            XdmNode? contextNode = null;
+            if (arguments.Length > 1)
+            {
+                var contextArg = arguments[1];
+                if (contextArg.MoveNext() && contextArg.Current is XdmNode node)
+                {
+                    contextNode = node;
+                }
+            }
+
+            _engine.RegisterBreakpointHit(_stylesheetPath, line, contextNode);
+        }
+
+        return new List<XdmItem> { new XdmAtomicValue(string.Empty) }.GetEnumerator();
+    }
+}
+

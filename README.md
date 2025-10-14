@@ -8,7 +8,37 @@ XSLT Debugger is a Visual Studio Code extension that lets you debug XSLT stylesh
 - **Variable Inspection**: Inspect XSLT context, variables, and XML node values
 - **XPath Evaluation**: Evaluate XPath expressions in the current context
 - **Inline C# Scripting**: Debug XSLT stylesheets with embedded C# code using Roslyn
-- **Multiple Engines**: Support for compiled XSLT engine (with Saxon placeholder)
+- **Multiple Engines**: Support for compiled XSLT engine (XSLT 1.0) and Saxon engine (XSLT 2.0/3.0)
+
+## Engines
+
+The debugger supports two XSLT processing engines:
+
+### Compiled Engine
+- **XSLT Version**: 1.0
+- **Features**: Full support for XSLT 1.0, inline C# scripting via `msxsl:script`
+- **Compatibility**: Works on all platforms
+- **Use Case**: XSLT 1.0 stylesheets with or without inline C# code
+
+### Saxon Engine (.NET)
+- **XSLT Version**: 2.0 and 3.0
+- **Features**: Full XSLT 2.0/3.0 support, XPath 2.0/3.0, advanced functions
+- **Implementation**: Uses SaxonHE10Net31Api (community IKVM build for .NET 8+)
+- **Compatibility**: Works on all platforms (Windows, macOS, Linux)
+- **License**: Free and open source (Mozilla Public License 2.0)
+- **Use Case**: Modern XSLT 2.0/3.0 stylesheets (same approach as Azure Logic Apps Data Mapper)
+
+### Engine Selection
+The debugger automatically validates your XSLT and suggests the appropriate engine:
+
+- **XSLT 1.0 with inline C#**: Uses compiled engine
+- **XSLT 2.0/3.0**: Uses Saxon .NET engine
+- **Manual Override**: Set `"engine": "compiled"` or `"engine": "saxonnet"` in launch.json
+
+### Known Limitations
+- **Saxon Engine (.NET)**: Now uses community IKVM build (SaxonHE10Net31Api) which resolves previous .NET 8+ compatibility issues. Supports transforms but breakpoint debugging is still in development.
+- **Debugging**: Breakpoint debugging is currently fully implemented for the compiled engine only. Saxon engine supports transforms but not step-through debugging yet.
+- **XSLT 3.0**: For XSLT 3.0 stylesheets, you must use `"engine": "saxonnet"`. The compiled engine only supports XSLT 1.0. Debugging instrumentation is automatically disabled for XSLT 3.0 to prevent execution issues.
 
 ## Quick Start
 
@@ -59,7 +89,7 @@ Create a `.vscode/launch.json` file in your project workspace:
 | `type` | string | ✅ | Must be `"xslt"` | `"xslt"` |
 | `request` | string | ✅ | Must be `"launch"` | `"launch"` |
 | `name` | string | ✅ | Display name in debug menu | `"Debug XSLT"` |
-| `engine` | string | ❌ | Engine type (default: `"compiled"`) | `"compiled"` |
+| `engine` | string | ❌ | Engine type (`"compiled"` or `"saxonnet"`, default: `"compiled"`) | `"saxonnet"` |
 | `stylesheet` | string | ✅ | Path to XSLT file | `"${file}"` or `"${workspaceFolder}/transform.xslt"` |
 | `xml` | string | ✅ | Path to input XML | `"${workspaceFolder}/data.xml"` |
 | `stopOnEntry` | boolean | ❌ | Pause at transform start | `false` |
@@ -72,15 +102,27 @@ Create a `.vscode/launch.json` file in your project workspace:
 
 ### Example Configurations
 
-**Debug currently open XSLT file:**
+**Debug currently open XSLT file with auto engine selection:**
 ```json
 {
   "type": "xslt",
   "request": "launch",
   "name": "Debug Current XSLT",
-  "engine": "compiled",
   "stylesheet": "${file}",
   "xml": "${workspaceFolder}/input.xml",
+  "stopOnEntry": false
+}
+```
+
+**Debug XSLT 2.0/3.0 with Saxon .NET engine:**
+```json
+{
+  "type": "xslt",
+  "request": "launch",
+  "name": "Debug XSLT 2.0/3.0",
+  "engine": "saxonnet",
+  "stylesheet": "${workspaceFolder}/transform.xslt",
+  "xml": "${workspaceFolder}/data.xml",
   "stopOnEntry": false
 }
 ```
@@ -133,6 +175,7 @@ The debugger supports XSLT stylesheets with embedded C# code using `msxsl:script
 - Visual Studio Code 1.105.0+
 - .NET 8.0 SDK (for building the debug adapter)
 - Node.js 18+ (for building the extension)
+- **Saxon Engine (.NET)**: Fully compatible with .NET 8+ on all platforms (Windows, macOS, Linux) using SaxonHE10Net31Api - no additional dependencies required
 
 ## Architecture
 
@@ -141,7 +184,17 @@ The extension consists of:
 - **C# Debug Adapter**: Implements DAP protocol and XSLT execution
 - **Instrumentation Engine**: Dynamically modifies XSLT to insert debug hooks
 
-## Recent Fixes
+## Recent Changes
+
+### v0.0.3 - Saxon .NET Engine Fix (IKVM Compatibility Resolution)
+- **Fixed**: Replaced Saxon-HE 10.9.0 with SaxonHE10Net31Api 10.9.15 (community IKVM build)
+- **Fixed**: Resolved MissingMethodException errors on .NET 8+ by using modern IKVM-compiled Saxon
+- **Upgraded**: Project now targets .NET 8.0 for better compatibility with modern packages
+- **Improved**: Saxon .NET engine now works on all platforms (Windows, macOS, Linux) without Java
+- **Removed**: Saxon Java engine - no longer needed as .NET Saxon works cross-platform
+- **Impact**: XSLT 2.0/3.0 support now works reliably cross-platform using pure .NET approach (same as Azure Logic Apps Data Mapper)
+- **Credit**: Uses Martin Honnen's community IKVM builds under Mozilla Public License 2.0
+- **Engines**: Now supports two engines - `"compiled"` (XSLT 1.0) and `"saxonnet"` (XSLT 2.0/3.0)
 
 ### v0.0.1 - Debug Adapter Packaging Fix
 - **Issue**: Extension failed to activate with "Couldn't find a debug adapter descriptor" error

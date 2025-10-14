@@ -54,7 +54,8 @@
               "engine": {
                 "type": "string",
                 "enum": [
-                  "compiled"
+                  "compiled",
+                  "saxonnet"
                 ],
                 "default": "compiled",
                 "description": "Execution engine to use for the transform"

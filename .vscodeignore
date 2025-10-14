@@ -18,8 +18,39 @@ vsc-extension-quickstart.md
 *.suo
 *.cache
 
-# Allow debug adapter DLL
-!XsltDebugger.DebugAdapter/bin/Debug/net8.0/XsltDebugger.DebugAdapter.dll
+# Exclude all bin folders by default
+**/bin/**
+
+# But include only the debug adapter runtime
+!XsltDebugger.DebugAdapter/bin/Debug/net8.0/**
+
+# Now exclude unwanted platforms from the included runtime
+# Exclude all IKVM runtimes first, then include only needed ones
+XsltDebugger.DebugAdapter/bin/Debug/net8.0/ikvm/**
+!XsltDebugger.DebugAdapter/bin/Debug/net8.0/ikvm/
+!XsltDebugger.DebugAdapter/bin/Debug/net8.0/ikvm/win-x64/**
+!XsltDebugger.DebugAdapter/bin/Debug/net8.0/ikvm/osx-arm64/**
+
+# Exclude localized satellite assemblies (non-English)
+XsltDebugger.DebugAdapter/bin/Debug/net8.0/cs/**
+XsltDebugger.DebugAdapter/bin/Debug/net8.0/de/**
+XsltDebugger.DebugAdapter/bin/Debug/net8.0/es/**
+XsltDebugger.DebugAdapter/bin/Debug/net8.0/fr/**
+XsltDebugger.DebugAdapter/bin/Debug/net8.0/it/**
+XsltDebugger.DebugAdapter/bin/Debug/net8.0/ja/**
+XsltDebugger.DebugAdapter/bin/Debug/net8.0/ko/**
+XsltDebugger.DebugAdapter/bin/Debug/net8.0/pl/**
+XsltDebugger.DebugAdapter/bin/Debug/net8.0/pt-BR/**
+XsltDebugger.DebugAdapter/bin/Debug/net8.0/ru/**
+XsltDebugger.DebugAdapter/bin/Debug/net8.0/tr/**
+XsltDebugger.DebugAdapter/bin/Debug/net8.0/zh-Hans/**
+XsltDebugger.DebugAdapter/bin/Debug/net8.0/zh-Hant/**
+
+# Exclude all runtimes first, then include only needed ones
+XsltDebugger.DebugAdapter/bin/Debug/net8.0/runtimes/**
+!XsltDebugger.DebugAdapter/bin/Debug/net8.0/runtimes/
+!XsltDebugger.DebugAdapter/bin/Debug/net8.0/runtimes/win-x64/**
+!XsltDebugger.DebugAdapter/bin/Debug/net8.0/runtimes/osx-arm64/**
 
 # OS generated files
 .DS_Store
@@ -55,3 +86,13 @@ node_modules/**
 # Documentation drafts
 *.md~
 *.markdown~
+
+# Development and sample files
+ShipmentConf.xml
+ShipmentConf.xslt
+XsltDebugger.sln
+sample/**
+.claude/**
+tools/**
+changelog.md
+package-clean.sh
