@@ -1,0 +1,118 @@
+{
+  "name": "xsltdebugger",
+  "displayName": "XSLT Debugger",
+  "description": "A VS Code extension for debugging XSLT using a .NET Debug Adapter.",
+  "version": "0.0.1",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/imdj360/XsltDebugger.git"
+  },
+  "engines": {
+    "vscode": "^1.105.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onDebugInitialConfigurations:xslt",
+    "onDebugResolve:xslt"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "debuggers": [
+      {
+        "type": "xslt",
+        "label": "XSLT Debugger",
+        "languages": [
+          "xml",
+          "xsl",
+          "xslt"
+        ],
+        "enableBreakpointsFor": [
+          "xml",
+          "xsl",
+          "xslt"
+        ],
+        "configurationAttributes": {
+          "launch": {
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Name of the debug configuration",
+                "default": "XSLT: Launch"
+              },
+              "stylesheet": {
+                "type": "string",
+                "description": "Path to the XSLT stylesheet to execute",
+                "default": "${file}"
+              },
+              "xml": {
+                "type": "string",
+                "description": "Path to the XML input document"
+              },
+              "engine": {
+                "type": "string",
+                "enum": [
+                  "compiled"
+                ],
+                "default": "compiled",
+                "description": "Execution engine to use for the transform"
+              },
+              "stopOnEntry": {
+                "type": "boolean",
+                "default": false,
+                "description": "Pause immediately when the transform starts"
+              }
+            },
+            "required": [
+              "stylesheet",
+              "xml"
+            ]
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "xslt",
+            "name": "XSLT: Launch",
+            "request": "launch",
+            "stylesheet": "${file}",
+            "xml": "${workspaceFolder}/sample/sample.xml",
+            "engine": "compiled",
+            "stopOnEntry": false
+          }
+        ]
+      }
+    ],
+    "breakpoints": [
+      {
+        "language": "xml"
+      },
+      {
+        "language": "xsl"
+      },
+      {
+        "language": "xslt"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "22.x",
+    "@types/vscode": "^1.105.0",
+    "@typescript-eslint/eslint-plugin": "^8.45.0",
+    "@typescript-eslint/parser": "^8.45.0",
+    "@vscode/test-cli": "^0.0.11",
+    "@vscode/test-electron": "^2.5.2",
+    "eslint": "^9.36.0",
+    "typescript": "^5.9.3"
+  },
+  "mock:start": "node ./tools/mock-adapter/adapter.js"
+}

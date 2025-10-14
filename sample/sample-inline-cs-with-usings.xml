@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<data>
+  <item>
+    <name>Test Item 1</name>
+    <value>Value 1</value>
+  </item>
+  <item>
+    <name>Test Item 2</name>
+    <value>Value 2</value>
+  </item>
+</data>

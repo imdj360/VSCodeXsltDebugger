@@ -1,0 +1,49 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug XSLT (Compiled)",
+            "type": "coreclr",
+            "request": "launch",
+            "program": "${workspaceFolder}/XsltDebugger.DebugAdapter/bin/Debug/net6.0/XsltDebugger.DebugAdapter.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "engine": "compiled",
+            "stylesheet": "${workspaceFolder}/sample/sample.xslt",
+            "xml": "${workspaceFolder}/sample/sample.xml"
+        },
+        {
+            "name": "Debug XSLT (Inline C#)",
+            "type": "coreclr",
+            "request": "launch",
+            "program": "${workspaceFolder}/XsltDebugger.DebugAdapter/bin/Debug/net6.0/XsltDebugger.DebugAdapter.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "engine": "compiled",
+            "stylesheet": "${workspaceFolder}/sample/sample-inline-cs.xslt",
+            "xml": "${workspaceFolder}/sample/sample.xml"
+        },
+        {
+            "name": "Debug XSLT (Saxon)",
+            "type": "coreclr",
+            "request": "launch",
+            "program": "${workspaceFolder}/XsltDebugger.DebugAdapter/bin/Debug/net6.0/XsltDebugger.DebugAdapter.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "engine": "saxon",
+            "stylesheet": "${workspaceFolder}/sample/sample.xslt",
+            "xml": "${workspaceFolder}/sample/sample.xml"
+        },
+        {
+  "type": "xslt",
+  "request": "launch",
+  "name": "Debug XSLT (.NET Hybrid)",
+  "stylesheet": "${workspaceFolder}/sample/sample-inline-cs.xslt",
+  "xml": "${workspaceFolder}/sample/sample.xml",
+  "engine": "xsltcompiled"
+}
+    ]
+}
