@@ -219,7 +219,13 @@ public class SaxonEngine : IXsltEngine
                 }
 
                 // Set up output
-                var outPath = Path.ChangeExtension(_currentStylesheet, ".out.xml");
+                var stylesheetDir = Path.GetDirectoryName(_currentStylesheet) ?? Directory.GetCurrentDirectory();
+                var outDir = Path.Combine(stylesheetDir, "out");
+                Directory.CreateDirectory(outDir);
+
+                var stylesheetFileName = Path.GetFileNameWithoutExtension(_currentStylesheet);
+                var outPath = Path.Combine(outDir, $"{stylesheetFileName}.out.xml");
+
                 if (XsltEngineManager.IsLogEnabled)
                 {
                     XsltEngineManager.NotifyOutput($"Writing transform output to: {outPath}");
@@ -582,6 +588,14 @@ public class SaxonEngine : IXsltEngine
             {
                 var linesText = string.Join(",", candidates.Select(c => c.Line!.Value).Distinct().OrderBy(x => x));
                 XsltEngineManager.NotifyOutput($"[trace] instrumented lines (saxon) for '{_currentStylesheet}': [{linesText}]");
+
+                // Debug: show which elements are being instrumented
+                foreach (var (element, line) in candidates.Take(20))
+                {
+                    var elemName = element.Name.LocalName;
+                    var parentName = element.Parent?.Name.LocalName ?? "null";
+                    XsltEngineManager.NotifyOutput($"[trace]   Line {line}: <{elemName}> (parent: <{parentName}>)");
+                }
             }
             catch { }
         }
@@ -593,10 +607,30 @@ public class SaxonEngine : IXsltEngine
                 continue;
             }
 
+            // Double-check: Skip if inside a function or variable (safety check)
+            if (element.Ancestors().Any(a => a.Name.Namespace == xsltNamespace &&
+                (a.Name.LocalName is "function" or "variable" or "param" or "with-param")))
+            {
+                continue;
+            }
+
             var isXsltElement = element.Name.Namespace == xsltNamespace;
             var breakCall = new XElement(
                 xsltNamespace + "value-of",
                 new XAttribute("select", $"dbg:break({line!.Value}, .)"));
+
+            var parent = element.Parent;
+            var parentIsXslt = parent?.Name.Namespace == xsltNamespace;
+
+            if (parentIsXslt && string.Equals(parent!.Name.LocalName, "choose", StringComparison.OrdinalIgnoreCase))
+            {
+                if (isXsltElement && (string.Equals(element.Name.LocalName, "when", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(element.Name.LocalName, "otherwise", StringComparison.OrdinalIgnoreCase)))
+                {
+                    element.AddFirst(breakCall);
+                }
+                continue;
+            }
 
             if (CanInsertAsFirstChild(element, isXsltElement))
             {
@@ -644,7 +678,17 @@ public class SaxonEngine : IXsltEngine
 
         // Don't instrument elements inside XSLT 2.0/3.0 function bodies
         // Functions should be debuggable but not auto-instrumented
-        if (ancestorLocal is "function")
+        // Check ALL ancestors, not just the nearest one, to handle nested structures
+        // like xsl:choose inside xsl:function
+        if (element.Ancestors().Any(a => a.Name.Namespace == xsltNamespace && a.Name.LocalName is "function"))
+        {
+            return false;
+        }
+
+        // Don't instrument elements inside variable/param declarations
+        // Adding instrumentation inside variable content can inject unwanted values
+        if (element.Ancestors().Any(a => a.Name.Namespace == xsltNamespace &&
+            a.Name.LocalName is "variable" or "param" or "with-param"))
         {
             return false;
         }

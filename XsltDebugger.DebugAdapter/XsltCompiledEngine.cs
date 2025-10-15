@@ -50,6 +50,8 @@ public class XsltCompiledEngine : IXsltEngine
         "sort",
         "message",
         "text",
+        // Structural control element that only allows xsl:when/xsl:otherwise children
+        "choose",
         // XSLT 2.0/3.0 specific elements that don't allow child instrumentation
         "next-iteration",
         "break",
@@ -175,7 +177,14 @@ public class XsltCompiledEngine : IXsltEngine
                 }
 
                 using var xmlReader = XmlReader.Create(inputPath);
-                var outPath = Path.ChangeExtension(_currentStylesheet, ".out.xml");
+
+                var stylesheetDir = Path.GetDirectoryName(_currentStylesheet) ?? Directory.GetCurrentDirectory();
+                var outDir = Path.Combine(stylesheetDir, "out");
+                Directory.CreateDirectory(outDir);
+
+                var stylesheetFileName = Path.GetFileNameWithoutExtension(_currentStylesheet);
+                var outPath = Path.Combine(outDir, $"{stylesheetFileName}.out.xml");
+
                 if (XsltEngineManager.IsLogEnabled)
                 {
                     XsltEngineManager.NotifyOutput($"Writing transform output to: {outPath}");
@@ -391,6 +400,19 @@ public class XsltCompiledEngine : IXsltEngine
             var breakCall = new XElement(
                 xsltNamespace + "value-of",
                 new XAttribute("select", $"dbg:break({line!.Value}, .)"));
+
+            var parent = element.Parent;
+            var parentIsXslt = parent?.Name.Namespace == xsltNamespace;
+
+            if (parentIsXslt && string.Equals(parent!.Name.LocalName, "choose", StringComparison.OrdinalIgnoreCase))
+            {
+                if (isXsltElement && (string.Equals(element.Name.LocalName, "when", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(element.Name.LocalName, "otherwise", StringComparison.OrdinalIgnoreCase)))
+                {
+                    element.AddFirst(breakCall);
+                }
+                continue;
+            }
 
             if (CanInsertAsFirstChild(element, isXsltElement))
             {
