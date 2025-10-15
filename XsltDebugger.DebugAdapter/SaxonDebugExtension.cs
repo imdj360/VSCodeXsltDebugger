@@ -71,16 +71,36 @@ public class SaxonDebugExtensionCall : ExtensionFunctionCall
                 if (contextArg.MoveNext() && contextArg.Current is XdmNode node)
                 {
                     contextNode = node;
-                    XsltEngineManager.NotifyOutput($"[trace] dbg:break context node: {node.NodeKind}, name={node.NodeName?.LocalName ?? "(no name)"}");
+                    if (XsltEngineManager.TraceEnabled)
+                    {
+                        XsltEngineManager.NotifyOutput($"[trace] dbg:break context node: {node.NodeKind}, name={node.NodeName?.LocalName ?? "(no name)"}");
+                    }
                 }
-                else
+                else if (XsltEngineManager.TraceEnabled)
                 {
                     XsltEngineManager.NotifyOutput($"[trace] dbg:break no context node available at line {line}");
                 }
             }
-            else
+            else if (XsltEngineManager.TraceEnabled)
             {
                 XsltEngineManager.NotifyOutput($"[trace] dbg:break only {arguments.Length} argument(s) at line {line}");
+            }
+
+            if (XsltEngineManager.IsTraceEnabled)
+            {
+                var nodeName = contextNode?.NodeName?.LocalName ?? "(no context)";
+                XsltEngineManager.NotifyOutput($"[trace] Breakpoint hit at {_stylesheetPath}:{line}, context node: {nodeName}");
+            }
+
+            if (XsltEngineManager.IsTraceAllEnabled && contextNode != null)
+            {
+                var nodeName = contextNode.NodeName?.LocalName ?? "(no name)";
+                var nodeValue = contextNode.StringValue ?? string.Empty;
+                var nodeType = contextNode.NodeKind.ToString();
+                XsltEngineManager.NotifyOutput($"[traceall] Breakpoint context detail at {_stylesheetPath}:{line}:\n" +
+                    $"  Current node: <{nodeName}>\n" +
+                    $"  Node type: {nodeType}\n" +
+                    $"  Value: {(nodeValue.Length > 100 ? nodeValue.Substring(0, 100) + "..." : nodeValue)}");
             }
 
             _engine.RegisterBreakpointHit(_stylesheetPath, line, contextNode);

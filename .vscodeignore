@@ -18,6 +18,14 @@ vsc-extension-quickstart.md
 *.suo
 *.cache
 
+# Exclude C# source code
+XsltDebugger.ConsoleTest/**/*.cs
+XsltDebugger.ConsoleTest/**/*.csproj
+XsltDebugger.DebugAdapter/**/*.cs
+XsltDebugger.DebugAdapter/**/*.csproj
+XsltDebugger.DebugAdapter/README.md
+XsltDebugger.sln
+
 # Exclude all bin folders by default
 **/bin/**
 

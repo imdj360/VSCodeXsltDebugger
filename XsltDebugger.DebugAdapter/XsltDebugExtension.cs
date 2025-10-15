@@ -27,8 +27,64 @@ public class XsltDebugExtension
     {
         var line = (int)Math.Round(lineNumber);
         var navigator = ExtractNavigator(context);
+
+        if (XsltEngineManager.IsTraceEnabled)
+        {
+            var nodeName = navigator?.Name ?? "(no context)";
+            XsltEngineManager.NotifyOutput($"[trace] Breakpoint hit at {_stylesheetPath}:{line}, context node: {nodeName}");
+        }
+
+        if (XsltEngineManager.IsTraceAllEnabled && navigator != null)
+        {
+            var xpath = GetXPathToNode(navigator);
+            var nodeValue = navigator.Value ?? string.Empty;
+            var nodeType = navigator.NodeType.ToString();
+            XsltEngineManager.NotifyOutput($"[traceall] Breakpoint context detail at {_stylesheetPath}:{line}:\n" +
+                $"  Current node: <{navigator.Name}>\n" +
+                $"  XPath: {xpath}\n" +
+                $"  Node type: {nodeType}\n" +
+                $"  Value: {(nodeValue.Length > 100 ? nodeValue.Substring(0, 100) + "..." : nodeValue)}");
+        }
+
         _engine.RegisterBreakpointHit(_stylesheetPath, line, navigator);
         return string.Empty;
+    }
+
+    private static string GetXPathToNode(XPathNavigator navigator)
+    {
+        try
+        {
+            var pathParts = new System.Collections.Generic.List<string>();
+            var current = navigator.Clone();
+
+            while (current.NodeType != System.Xml.XPath.XPathNodeType.Root)
+            {
+                if (current.NodeType == System.Xml.XPath.XPathNodeType.Element)
+                {
+                    var position = 1;
+                    var sibling = current.Clone();
+                    while (sibling.MoveToPrevious())
+                    {
+                        if (sibling.Name == current.Name)
+                        {
+                            position++;
+                        }
+                    }
+                    pathParts.Insert(0, $"{current.Name}[{position}]");
+                }
+
+                if (!current.MoveToParent())
+                {
+                    break;
+                }
+            }
+
+            return pathParts.Count > 0 ? "/" + string.Join("/", pathParts) : "/";
+        }
+        catch
+        {
+            return "(xpath unavailable)";
+        }
     }
 
     private static XPathNavigator? ExtractNavigator(XPathNodeIterator? context)

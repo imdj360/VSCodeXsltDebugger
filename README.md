@@ -93,6 +93,8 @@ Create a `.vscode/launch.json` file in your project workspace:
 | `stylesheet` | string | ✅ | Path to XSLT file | `"${file}"` or `"${workspaceFolder}/transform.xslt"` |
 | `xml` | string | ✅ | Path to input XML | `"${workspaceFolder}/data.xml"` |
 | `stopOnEntry` | boolean | ❌ | Pause at transform start | `false` |
+| `debug` | boolean | ❌ | Enable debugging mode (breakpoints and stepping, default: `true`) | `true` |
+| `logLevel` | string | ❌ | Logging verbosity: `"none"`, `"log"`, `"trace"`, or `"traceall"` (default: `"log"`) | `"log"` |
 
 ### Variable Substitutions
 
@@ -140,6 +142,48 @@ Create a `.vscode/launch.json` file in your project workspace:
 }
 ```
 
+**Debug with troubleshooting traces:**
+```json
+{
+  "type": "xslt",
+  "request": "launch",
+  "name": "Debug XSLT (trace level)",
+  "engine": "compiled",
+  "stylesheet": "${workspaceFolder}/transform.xslt",
+  "xml": "${workspaceFolder}/data.xml",
+  "debug": true,
+  "logLevel": "trace"
+}
+```
+
+**Debug with full XPath value tracking:**
+```json
+{
+  "type": "xslt",
+  "request": "launch",
+  "name": "Debug XSLT (traceall level)",
+  "engine": "compiled",
+  "stylesheet": "${workspaceFolder}/transform.xslt",
+  "xml": "${workspaceFolder}/data.xml",
+  "debug": true,
+  "logLevel": "traceall"
+}
+```
+
+**Run without debugging (fastest execution):**
+```json
+{
+  "type": "xslt",
+  "request": "launch",
+  "name": "Run XSLT (no debugging)",
+  "engine": "compiled",
+  "stylesheet": "${workspaceFolder}/transform.xslt",
+  "xml": "${workspaceFolder}/data.xml",
+  "debug": false,
+  "logLevel": "none"
+}
+```
+
 ### Debugging Features
 
 - **Breakpoints**: Click in the gutter next to XSLT instructions
@@ -147,6 +191,55 @@ Create a `.vscode/launch.json` file in your project workspace:
 - **Variables**: Inspect context nodes, attributes, and variables in the Variables panel
 - **Watch**: Add XPath expressions to watch their values
 - **Console**: Evaluate XPath expressions in the Debug Console
+
+### Log Levels
+
+The debugger supports a hierarchical logging system with four levels:
+
+#### `logLevel: "none"` - Silent Mode
+- **Purpose**: Maximum performance, minimal output
+- **Output**: Errors only
+- **Use Case**: Production runs, performance testing
+- **Overhead**: ~0% (no instrumentation when `debug: false`)
+
+#### `logLevel: "log"` - General Execution (Default)
+- **Purpose**: High-level execution milestones
+- **Output**:
+  - Transform started/completed
+  - XSLT version detected
+  - Compilation status
+  - File loading/writing events
+- **Use Case**: Normal development, understanding what's happening
+- **Overhead**: <1%
+
+#### `logLevel: "trace"` - Troubleshooting
+- **Purpose**: Detailed execution flow for debugging
+- **Output**: Everything in `log` plus:
+  - Breakpoint hits with context node names
+  - Execution stops (breakpoint/step/entry)
+  - Instrumented line numbers
+  - Engine internal phases
+  - XPath evaluation requests
+- **Use Case**: Debugging breakpoints, understanding execution order
+- **Overhead**: ~5-10%
+
+#### `logLevel: "traceall"` - Full XPath Value Tracking
+- **Purpose**: Deep inspection of all values and context
+- **Output**: Everything in `trace` plus:
+  - Full XPath location of context nodes
+  - Node values and types
+  - XPath expression results with values
+  - Attribute values
+  - Node structure details
+- **Use Case**: Understanding data flow, debugging complex XPath expressions
+- **Overhead**: ~15-20%
+
+**Example Scenarios:**
+- **Production/CI**: `logLevel: "log"` - See what's happening
+- **Development**: `logLevel: "log"` or `logLevel: "trace"` - Normal debugging
+- **Troubleshooting**: `logLevel: "trace"` - Why isn't my breakpoint working?
+- **Deep debugging**: `logLevel: "traceall"` - What values am I actually getting?
+- **Performance tests**: `debug: false, logLevel: "none"` - Maximum speed
 
 ### Inline C# Scripting
 

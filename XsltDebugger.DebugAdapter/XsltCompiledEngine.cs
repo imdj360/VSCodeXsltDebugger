@@ -63,135 +63,153 @@ public class XsltCompiledEngine : IXsltEngine
     private string _currentStylesheet = string.Empty;
     private bool _nextStepRequested;
 
-    public Task StartAsync(string stylesheet, string xml, bool stopOnEntry)
+    public async Task StartAsync(string stylesheet, string xml, bool stopOnEntry)
     {
-        try
+        // Run the compiled engine on a background thread to avoid blocking the DAP message loop
+        if (XsltEngineManager.TraceEnabled)
         {
-            if (string.IsNullOrWhiteSpace(stylesheet) || string.IsNullOrWhiteSpace(xml))
-            {
-                XsltEngineManager.NotifyOutput("Launch request missing stylesheet or xml path.");
-                XsltEngineManager.NotifyTerminated(1);
-                return Task.CompletedTask;
-            }
-
-            _currentStylesheet = NormalizePath(stylesheet);
-            var inputPath = NormalizePath(xml);
-            var xslt = new XslCompiledTransform();
-
-            XDocument xdoc;
+            XsltEngineManager.NotifyOutput("[trace] Compiled.Start: scheduling");
+        }
+        await Task.Run(() =>
+        {
             try
             {
-                xdoc = XDocument.Load(stylesheet, LoadOptions.SetLineInfo);
-            }
-            catch (Exception ex)
-            {
-                XsltEngineManager.NotifyOutput($"Failed to load XSLT stylesheet: {ex.Message}");
-                XsltEngineManager.NotifyTerminated(1);
-                return Task.CompletedTask;
-            }
-
-            if (xdoc.Root == null || !IsXsltStylesheet(xdoc.Root))
-            {
-                XsltEngineManager.NotifyOutput("The specified file is not a valid XSLT stylesheet.");
-                XsltEngineManager.NotifyTerminated(1);
-                return Task.CompletedTask;
-            }
-
-            // Validate engine compatibility
-            try
-            {
-                XsltCompiledEngine.ValidateEngineCompatibility(stylesheet, XsltEngineType.Compiled);
-            }
-            catch (Exception ex)
-            {
-                XsltEngineManager.NotifyOutput($"Engine validation failed: {ex.Message}");
-                XsltEngineManager.NotifyTerminated(1);
-                return Task.CompletedTask;
-            }
-
-            // XSLT 1.0 with XslCompiledTransform
-            XNamespace msxsl = "urn:schemas-microsoft-com:xslt";
-            var scripts = xdoc.Descendants(msxsl + "script").ToList();
-
-            var args = new XsltArgumentList();
-            var extNamespace = xdoc.Root?.GetNamespaceOfPrefix("ext")?.NamespaceName;
-            if (!string.IsNullOrWhiteSpace(extNamespace))
-            {
-                args.AddExtensionObject(extNamespace, new RoslynEvaluator());
-            }
-            else
-            {
-                var evalNs = "urn:my-ext-eval";
-                args.AddExtensionObject(evalNs, new RoslynEvaluator());
-                xdoc.Root?.SetAttributeValue(XNamespace.Xmlns + "myeval", evalNs);
-            }
-
-            foreach (var script in scripts)
-            {
-                var language = script.Attribute("language")?.Value ?? "C#";
-                var implements = script.Attribute("implements-prefix")?.Value;
-                var code = script.Value;
-                if (language.IndexOf("c#", StringComparison.OrdinalIgnoreCase) >= 0 &&
-                    !string.IsNullOrWhiteSpace(code) &&
-                    !string.IsNullOrWhiteSpace(implements))
+                if (XsltEngineManager.TraceEnabled)
                 {
-                    var extensionObj = CompileAndCreateExtensionObject(code);
-                    var ns = xdoc.Root?.GetNamespaceOfPrefix(implements)?.NamespaceName;
-                    var namespaceUri = !string.IsNullOrWhiteSpace(ns) ? ns : $"urn:my-ext-{implements}";
-                    args.AddExtensionObject(namespaceUri, extensionObj);
+                    XsltEngineManager.NotifyOutput("[trace] Compiled.Start: entered");
+                }
+                if (string.IsNullOrWhiteSpace(stylesheet) || string.IsNullOrWhiteSpace(xml))
+                {
+                    XsltEngineManager.NotifyOutput("Launch request missing stylesheet or xml path.");
+                    XsltEngineManager.NotifyTerminated(1);
+                    return;
+                }
+
+                _currentStylesheet = NormalizePath(stylesheet);
+                var inputPath = NormalizePath(xml);
+                var xslt = new XslCompiledTransform();
+
+                XDocument xdoc;
+                try
+                {
+                    xdoc = XDocument.Load(stylesheet, LoadOptions.SetLineInfo);
+                }
+                catch (Exception ex)
+                {
+                    XsltEngineManager.NotifyOutput($"Failed to load XSLT stylesheet: {ex.Message}");
+                    XsltEngineManager.NotifyTerminated(1);
+                    return;
+                }
+
+                if (xdoc.Root == null || !IsXsltStylesheet(xdoc.Root))
+                {
+                    XsltEngineManager.NotifyOutput("The specified file is not a valid XSLT stylesheet.");
+                    XsltEngineManager.NotifyTerminated(1);
+                    return;
+                }
+
+                // Validate engine compatibility
+                try
+                {
+                    XsltCompiledEngine.ValidateEngineCompatibility(stylesheet, XsltEngineType.Compiled);
+                }
+                catch (Exception ex)
+                {
+                    XsltEngineManager.NotifyOutput($"Engine validation failed: {ex.Message}");
+                    XsltEngineManager.NotifyTerminated(1);
+                    return;
+                }
+
+                // XSLT 1.0 with XslCompiledTransform
+                XNamespace msxsl = "urn:schemas-microsoft-com:xslt";
+                var scripts = xdoc.Descendants(msxsl + "script").ToList();
+
+                var args = new XsltArgumentList();
+                var extNamespace = xdoc.Root?.GetNamespaceOfPrefix("ext")?.NamespaceName;
+                if (!string.IsNullOrWhiteSpace(extNamespace))
+                {
+                    args.AddExtensionObject(extNamespace, new RoslynEvaluator());
+                }
+                else
+                {
+                    var evalNs = "urn:my-ext-eval";
+                    args.AddExtensionObject(evalNs, new RoslynEvaluator());
+                    xdoc.Root?.SetAttributeValue(XNamespace.Xmlns + "myeval", evalNs);
+                }
+
+                foreach (var script in scripts)
+                {
+                    var language = script.Attribute("language")?.Value ?? "C#";
+                    var implements = script.Attribute("implements-prefix")?.Value;
+                    var code = script.Value;
+                    if (language.IndexOf("c#", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                        !string.IsNullOrWhiteSpace(code) &&
+                        !string.IsNullOrWhiteSpace(implements))
+                    {
+                        var extensionObj = CompileAndCreateExtensionObject(code);
+                        var ns = xdoc.Root?.GetNamespaceOfPrefix(implements)?.NamespaceName;
+                        var namespaceUri = !string.IsNullOrWhiteSpace(ns) ? ns : $"urn:my-ext-{implements}";
+                        args.AddExtensionObject(namespaceUri, extensionObj);
+                    }
+                }
+
+                if (scripts.Count > 0)
+                {
+                    xdoc.Descendants(msxsl + "script").Remove();
+                }
+
+                EnsureDebugNamespace(xdoc);
+                InstrumentStylesheet(xdoc);
+
+                var settings = new XsltSettings(enableDocumentFunction: false, enableScript: false);
+                args.AddExtensionObject(DebugNamespace, new XsltDebugExtension(this, _currentStylesheet));
+
+                using (var reader = xdoc.CreateReader())
+                {
+                    xslt.Load(reader, settings, new XmlUrlResolver());
+                }
+
+                if (stopOnEntry && XsltEngineManager.DebugEnabled)
+                {
+                    PauseForBreakpoint(_currentStylesheet, 0, DebugStopReason.Entry, null);
+                }
+
+                using var xmlReader = XmlReader.Create(inputPath);
+                var outPath = Path.ChangeExtension(_currentStylesheet, ".out.xml");
+                if (XsltEngineManager.IsLogEnabled)
+                {
+                    XsltEngineManager.NotifyOutput($"Writing transform output to: {outPath}");
+                }
+                if (string.IsNullOrWhiteSpace(outPath))
+                {
+                    XsltEngineManager.NotifyOutput("Output path for transform is empty; skipping write.");
+                }
+                else
+                {
+                    using var fs = File.Create(outPath);
+                    using var writer = XmlWriter.Create(fs, xslt.OutputSettings ?? new XmlWriterSettings { Indent = true });
+                    xslt.Transform(xmlReader, args, writer);
+                }
+                if (XsltEngineManager.IsLogEnabled)
+                {
+                    XsltEngineManager.NotifyOutput("Transform completed successfully.");
+                }
+                XsltEngineManager.NotifyTerminated(0);
+            }
+            catch (Exception ex)
+            {
+                XsltEngineManager.NotifyOutput($"Transform failed: {ex}");
+                XsltEngineManager.NotifyTerminated(1);
+            }
+            finally
+            {
+                lock (_sync)
+                {
+                    _pauseTcs?.TrySetResult(true);
+                    _pauseTcs = null;
                 }
             }
-
-            if (scripts.Count > 0)
-            {
-                xdoc.Descendants(msxsl + "script").Remove();
-            }
-
-            EnsureDebugNamespace(xdoc);
-            InstrumentStylesheet(xdoc);
-
-            var settings = new XsltSettings(enableDocumentFunction: false, enableScript: false);
-            args.AddExtensionObject(DebugNamespace, new XsltDebugExtension(this, _currentStylesheet));
-
-            using (var reader = xdoc.CreateReader())
-            {
-                xslt.Load(reader, settings, new XmlUrlResolver());
-            }
-
-            if (stopOnEntry)
-            {
-                PauseForBreakpoint(_currentStylesheet, 0, DebugStopReason.Entry, null);
-            }
-
-            using var xmlReader = XmlReader.Create(inputPath);
-            var outPath = Path.ChangeExtension(_currentStylesheet, ".out.xml");
-            XsltEngineManager.NotifyOutput($"Writing transform output to: {outPath}");
-            if (string.IsNullOrWhiteSpace(outPath))
-            {
-                XsltEngineManager.NotifyOutput("Output path for transform is empty; skipping write.");
-            }
-            else
-            {
-                using var fs = File.Create(outPath);
-                using var writer = XmlWriter.Create(fs, xslt.OutputSettings ?? new XmlWriterSettings { Indent = true });
-                xslt.Transform(xmlReader, args, writer);
-            }
-            XsltEngineManager.NotifyTerminated(0);
-        }
-        catch (Exception ex)
-        {
-            XsltEngineManager.NotifyOutput($"Transform failed: {ex}");
-            XsltEngineManager.NotifyTerminated(1);
-        }
-        finally
-        {
-            lock (_sync)
-            {
-                _pauseTcs?.TrySetResult(true);
-                _pauseTcs = null;
-            }
-        }
-        return Task.CompletedTask;
+        });
     }
 
     public Task ContinueAsync()
@@ -243,6 +261,9 @@ public class XsltCompiledEngine : IXsltEngine
         var normalized = NormalizePath(file);
         var stepRequested = ConsumeStepRequest();
 
+        // Always update the context for evaluation, even when not pausing
+        XsltEngineManager.UpdateContext(contextNode);
+
         if (IsBreakpointHit(normalized, line))
         {
             PauseForBreakpoint(normalized, line, DebugStopReason.Breakpoint, contextNode);
@@ -269,6 +290,11 @@ public class XsltCompiledEngine : IXsltEngine
 
     private void PauseForBreakpoint(string file, int line, DebugStopReason reason, XPathNavigator? context)
     {
+        if (!XsltEngineManager.DebugEnabled)
+        {
+            return;
+        }
+
         TaskCompletionSource<bool>? localTcs;
         lock (_sync)
         {
@@ -344,12 +370,15 @@ public class XsltCompiledEngine : IXsltEngine
             .Where(tuple => tuple.Line.HasValue)
             .ToList();
 
-        try
+        if (XsltEngineManager.TraceEnabled)
         {
-            var linesText = string.Join(",", candidates.Select(c => c.Line!.Value).Distinct().OrderBy(x => x));
-            XsltEngineManager.NotifyOutput($"[trace] instrumented lines (compiled) for '{_currentStylesheet}': [{linesText}]");
+            try
+            {
+                var linesText = string.Join(",", candidates.Select(c => c.Line!.Value).Distinct().OrderBy(x => x));
+                XsltEngineManager.NotifyOutput($"[trace] instrumented lines (compiled) for '{_currentStylesheet}': [{linesText}]");
+            }
+            catch { }
         }
-        catch { }
 
         foreach (var (element, line) in candidates)
         {

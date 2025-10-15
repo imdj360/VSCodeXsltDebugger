@@ -30,7 +30,7 @@ internal sealed class DapServer
     private readonly Dictionary<int, Func<List<VariableDescriptor>>> _variableProviders = new();
     private int _nextVariableReference = 1;
     private bool _configurationDone = false;
-    private (string engineType, string stylesheet, string xml, bool stopOnEntry)? _pendingLaunch;
+    private (string engineType, string stylesheet, string xml, bool stopOnEntry, bool debug, LogLevel logLevel)? _pendingLaunch;
 
     public DapServer(Stream input, Stream output, SessionState state)
     {
@@ -126,7 +126,10 @@ internal sealed class DapServer
             case "configurationDone":
                 _configurationDone = true;
                 // Extra trace to confirm receipt of configurationDone
-                try { SendOutput("[trace] received configurationDone", isError: false); } catch { }
+                if (XsltEngineManager.IsTraceEnabled)
+                {
+                    try { SendOutput("[trace] received configurationDone", isError: false); } catch { }
+                }
                 SendResponse(requestSeq, command, new { });
                 TryStartPendingLaunch();
                 break;
@@ -172,6 +175,7 @@ internal sealed class DapServer
 
     private void HandleInitialize(int requestSeq)
     {
+        // Per DAP, the initialize response's body is the capabilities object itself
         var capabilities = new
         {
             supportsConfigurationDoneRequest = true,
@@ -184,7 +188,7 @@ internal sealed class DapServer
             supportsCompletionsRequest = false
         };
 
-        SendResponse(requestSeq, "initialize", new { capabilities });
+        SendResponse(requestSeq, "initialize", capabilities);
         SendEvent("initialized", new { });
     }
 
@@ -228,13 +232,16 @@ internal sealed class DapServer
         var engineLines = lines.Where(l => l > 0).ToList();
 
         var resolvedLines = _state.SetBreakpoints(sourcePath, engineLines);
-        try
+        if (XsltEngineManager.IsTraceEnabled)
         {
-            var norm = NormalizePath(sourcePath);
-            var linesText = string.Join(",", resolvedLines);
-            SendOutput($"[trace] setBreakpoints for '{norm}' => [{linesText}]", isError: false);
+            try
+            {
+                var norm = NormalizePath(sourcePath);
+                var linesText = string.Join(",", resolvedLines);
+                SendOutput($"[trace] setBreakpoints for '{norm}' => [{linesText}]", isError: false);
+            }
+            catch { }
         }
-        catch { }
         var breakpointBodies = new List<object>();
         foreach (var line in resolvedLines)
         {
@@ -243,13 +250,6 @@ internal sealed class DapServer
         }
 
         SendResponse(requestSeq, "setBreakpoints", new { breakpoints = breakpointBodies });
-
-        // If launch is pending but configurationDone hasn't arrived, start now to avoid stalls.
-        if (_pendingLaunch is not null && !_configurationDone)
-        {
-            try { SendOutput("[trace] configurationDone not received; starting engine after setBreakpoints", isError: false); } catch { }
-            TryStartPendingLaunch();
-        }
     }
 
     private Task HandleLaunchAsync(int requestSeq, JsonElement arguments)
@@ -258,6 +258,9 @@ internal sealed class DapServer
         var stylesheet = GetString(arguments, "stylesheet");
         var xml = GetString(arguments, "xml");
         var stopOnEntry = GetBoolean(arguments, "stopOnEntry");
+        var debug = GetBooleanWithDefault(arguments, "debug", true);
+        var logLevelStr = GetString(arguments, "logLevel") ?? "log";
+        var logLevel = ParseLogLevel(logLevelStr);
 
         if (string.IsNullOrWhiteSpace(stylesheet) || string.IsNullOrWhiteSpace(xml))
         {
@@ -276,9 +279,9 @@ internal sealed class DapServer
             return Task.CompletedTask;
         }
 
-        _state.SetEngine(engine);
+        _state.SetEngine(engine, debug, logLevel);
         var allBreakpoints = _state.GetAllBreakpoints();
-        if (allBreakpoints.Count > 0)
+        if (debug && allBreakpoints.Count > 0)
         {
             engine.SetBreakpoints(allBreakpoints);
         }
@@ -287,19 +290,22 @@ internal sealed class DapServer
         {
             var normSheet = NormalizePath(stylesheet!);
             var normXml = NormalizePath(xml!);
-            SendOutput($"[trace] launch engine={engineType}, stylesheet={normSheet}, xml={normXml}, stopOnEntry={stopOnEntry}", isError: false);
+            if (XsltEngineManager.IsTraceEnabled)
+            {
+                SendOutput($"[trace] launch engine={engineType}, stylesheet={normSheet}, xml={normXml}, stopOnEntry={stopOnEntry}, debug={debug}, logLevel={logLevel}", isError: false);
+            }
         }
         catch { }
 
         // Queue launch until configurationDone to ensure breakpoints are set and client is ready for 'stopped' events.
-        _pendingLaunch = (engineType, stylesheet!, xml!, stopOnEntry);
+        _pendingLaunch = (engineType, stylesheet!, xml!, stopOnEntry, debug, logLevel);
         if (_configurationDone)
         {
             TryStartPendingLaunch();
         }
 
         SendResponse(requestSeq, "launch", new { });
-        if (!_configurationDone)
+        if (!_configurationDone && XsltEngineManager.IsTraceEnabled)
         {
             SendOutput("[trace] launch queued until configurationDone", isError: false);
         }
@@ -325,7 +331,10 @@ internal sealed class DapServer
 
         try
         {
-            SendOutput($"[trace] starting engine now: {launch.engineType}", isError: false);
+            if (XsltEngineManager.IsTraceEnabled)
+            {
+                SendOutput($"[trace] starting engine now: {launch.engineType}", isError: false);
+            }
             var task = engine.StartAsync(launch.stylesheet, launch.xml, launch.stopOnEntry);
             _ = task.ContinueWith(t =>
             {
@@ -339,14 +348,23 @@ internal sealed class DapServer
                 }
                 else if (t.IsCanceled)
                 {
-                    try { SendOutput("[trace] engine task canceled", isError: false); } catch { }
+                    if (XsltEngineManager.IsTraceEnabled)
+                    {
+                        try { SendOutput("[trace] engine task canceled", isError: false); } catch { }
+                    }
                 }
                 else
                 {
-                    try { SendOutput("[trace] engine task completed", isError: false); } catch { }
+                    if (XsltEngineManager.IsTraceEnabled)
+                    {
+                        try { SendOutput("[trace] engine task completed", isError: false); } catch { }
+                    }
                 }
             });
-            SendOutput($"Starting XSLT transform using engine '{launch.engineType}'.", isError: false);
+            if (XsltEngineManager.IsLogEnabled)
+            {
+                SendOutput($"Starting XSLT transform using engine '{launch.engineType}'.", isError: false);
+            }
         }
         catch (Exception ex)
         {
@@ -439,7 +457,10 @@ internal sealed class DapServer
         }
 
         var context = XsltEngineManager.LastContext;
-        SendOutput($"[trace] HandleEvaluate: expression='{expression}', context={(context != null ? $"available (node={context.Name})" : "NULL")}", isError: false);
+        if (XsltEngineManager.IsTraceEnabled)
+        {
+            SendOutput($"[trace] HandleEvaluate: expression='{expression}', context={(context != null ? $"available (node={context.Name})" : "NULL")}", isError: false);
+        }
 
         if (context == null)
         {
@@ -453,6 +474,12 @@ internal sealed class DapServer
             var navigator = context.Clone();
             var evaluationResult = EvaluateXPath(navigator, expression);
             var formatted = FormatEvaluationResult(evaluationResult, out var variablesReference);
+
+            if (XsltEngineManager.IsTraceAllEnabled)
+            {
+                SendOutput($"[traceall] XPath evaluation: {expression}\n  Result: {formatted}", isError: false);
+            }
+
             SendResponse(requestSeq, "evaluate", new { result = formatted, variablesReference });
         }
         catch (Exception ex)
@@ -949,6 +976,39 @@ internal sealed class DapServer
             JsonValueKind.False => false,
             JsonValueKind.Number when value.TryGetInt32(out var number) => number != 0,
             _ => false
+        };
+    }
+
+    private static bool GetBooleanWithDefault(JsonElement element, string propertyName, bool defaultValue)
+    {
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            return defaultValue;
+        }
+
+        if (!element.TryGetProperty(propertyName, out var value))
+        {
+            return defaultValue;
+        }
+
+        return value.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Number when value.TryGetInt32(out var number) => number != 0,
+            _ => defaultValue
+        };
+    }
+
+    private static LogLevel ParseLogLevel(string logLevelStr)
+    {
+        return logLevelStr?.ToLowerInvariant() switch
+        {
+            "none" => LogLevel.None,
+            "log" => LogLevel.Log,
+            "trace" => LogLevel.Trace,
+            "traceall" => LogLevel.TraceAll,
+            _ => LogLevel.Log // Default to log level
         };
     }
 }

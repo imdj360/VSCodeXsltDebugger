@@ -25,12 +25,18 @@ public class SaxonEngine : IXsltEngine
     public async Task StartAsync(string stylesheet, string xml, bool stopOnEntry)
     {
         // Log before scheduling to confirm StartAsync was invoked
-        XsltEngineManager.NotifyOutput("[trace] Saxon.Start: scheduling");
+        if (XsltEngineManager.TraceEnabled)
+        {
+            XsltEngineManager.NotifyOutput("[trace] Saxon.Start: scheduling");
+        }
         await Task.Run(() =>
         {
             try
             {
-                XsltEngineManager.NotifyOutput("[trace] Saxon.Start: entered");
+                if (XsltEngineManager.TraceEnabled)
+                {
+                    XsltEngineManager.NotifyOutput("[trace] Saxon.Start: entered");
+                }
                 if (string.IsNullOrWhiteSpace(stylesheet) || string.IsNullOrWhiteSpace(xml))
                 {
                     XsltEngineManager.NotifyOutput("Launch request missing stylesheet or xml path.");
@@ -42,7 +48,10 @@ public class SaxonEngine : IXsltEngine
                 var inputPath = NormalizePath(xml);
 
                 // Initialize Saxon processor
-                XsltEngineManager.NotifyOutput("[trace] Saxon.Start: new Processor()");
+                if (XsltEngineManager.TraceEnabled)
+                {
+                    XsltEngineManager.NotifyOutput("[trace] Saxon.Start: new Processor()");
+                }
                 _processor = new Processor();
 
                 // Enable XSLT 3.0 features
@@ -54,12 +63,18 @@ public class SaxonEngine : IXsltEngine
                 // Capture compilation errors
                 var errorList = new List<StaticError>();
                 try { compiler.ErrorList = errorList; } catch { }
-                XsltEngineManager.NotifyOutput("[trace] Saxon.Start: compiler created");
+                if (XsltEngineManager.TraceEnabled)
+                {
+                    XsltEngineManager.NotifyOutput("[trace] Saxon.Start: compiler created");
+                }
 
                 XDocument xdoc;
                 try
                 {
-                    XsltEngineManager.NotifyOutput($"[trace] Saxon.Start: loading XSLT '{_currentStylesheet}'");
+                    if (XsltEngineManager.TraceEnabled)
+                    {
+                        XsltEngineManager.NotifyOutput($"[trace] Saxon.Start: loading XSLT '{_currentStylesheet}'");
+                    }
                     xdoc = XDocument.Load(stylesheet, LoadOptions.SetLineInfo);
                 }
                 catch (Exception ex)
@@ -90,42 +105,67 @@ public class SaxonEngine : IXsltEngine
 
                 // Instrument the stylesheet for debugging
                 var version = XsltCompiledEngine.GetXsltVersion(xdoc.Root);
-                XsltEngineManager.NotifyOutput($"XSLT version detected: {version}");
-
-                // Enable debugging instrumentation for XSLT 2.0/3.0
-                bool useDebugging = true;
-
-                if (useDebugging)
+                if (XsltEngineManager.IsLogEnabled)
                 {
-                    XsltEngineManager.NotifyOutput("[trace] Saxon.Start: register debug extension");
+                    XsltEngineManager.NotifyOutput($"XSLT version detected: {version}");
+                }
+
+                // Enable debugging instrumentation only if debugging is enabled
+                if (XsltEngineManager.DebugEnabled)
+                {
+                    if (XsltEngineManager.IsTraceEnabled)
+                    {
+                        XsltEngineManager.NotifyOutput("[trace] Saxon.Start: register debug extension");
+                    }
                     // Register extension function for debugging
                     var debugExtension = new SaxonDebugExtension(this, _currentStylesheet);
                     _processor.RegisterExtensionFunction(debugExtension);
 
                     EnsureDebugNamespace(xdoc);
                     InstrumentStylesheet(xdoc);
-                    XsltEngineManager.NotifyOutput("Debugging enabled for XSLT 2.0/3.0.");
+                    if (XsltEngineManager.IsLogEnabled)
+                    {
+                        XsltEngineManager.NotifyOutput("Debugging enabled for XSLT 2.0/3.0.");
+                    }
                 }
                 else
                 {
-                    XsltEngineManager.NotifyOutput("Note: Breakpoint debugging not yet supported for Saxon engine. Running transform only.");
+                    if (XsltEngineManager.IsLogEnabled)
+                    {
+                        XsltEngineManager.NotifyOutput("Debugging disabled. Running transform without breakpoints.");
+                    }
                 }
 
                 // Compile the stylesheet
-                XsltEngineManager.NotifyOutput("Compiling stylesheet...");
+                if (XsltEngineManager.IsLogEnabled)
+                {
+                    XsltEngineManager.NotifyOutput("Compiling stylesheet...");
+                }
                 try
                 {
                     using (var reader = xdoc.CreateReader())
                     {
-                        XsltEngineManager.NotifyOutput("[trace] Saxon.Start: building Xdm tree");
+                        if (XsltEngineManager.TraceEnabled)
+                        {
+                            XsltEngineManager.NotifyOutput("[trace] Saxon.Start: building Xdm tree");
+                        }
                         var documentBuilder = _processor.NewDocumentBuilder();
                         var stylesheetDoc = documentBuilder.Build(reader);
-                        XsltEngineManager.NotifyOutput("[trace] Saxon.Start: compiling");
+                        if (XsltEngineManager.TraceEnabled)
+                        {
+                            XsltEngineManager.NotifyOutput("[trace] Saxon.Start: compiling");
+                        }
                         var executable = compiler.Compile(stylesheetDoc);
                         _transformer = executable.Load();
-                        XsltEngineManager.NotifyOutput("[trace] Saxon.Start: transformer loaded");
+                        if (XsltEngineManager.IsTraceEnabled)
+                        {
+                            XsltEngineManager.NotifyOutput("[trace] Saxon.Start: transformer loaded");
+                        }
                     }
-                    XsltEngineManager.NotifyOutput("Stylesheet compiled successfully.");
+                    if (XsltEngineManager.IsLogEnabled)
+                    {
+                        XsltEngineManager.NotifyOutput("Stylesheet compiled successfully.");
+                    }
                 }
                 catch (Exception compileEx)
                 {
@@ -155,28 +195,43 @@ public class SaxonEngine : IXsltEngine
                 }
 
                 // Load input document
-                XsltEngineManager.NotifyOutput("Loading input XML document...");
+                if (XsltEngineManager.IsLogEnabled)
+                {
+                    XsltEngineManager.NotifyOutput("Loading input XML document...");
+                }
                 var inputBuilder = _processor.NewDocumentBuilder();
-                XsltEngineManager.NotifyOutput($"[trace] Saxon.Start: loading input '{inputPath}'");
+                if (XsltEngineManager.IsTraceEnabled)
+                {
+                    XsltEngineManager.NotifyOutput($"[trace] Saxon.Start: loading input '{inputPath}'");
+                }
                 var inputDoc = inputBuilder.Build(new Uri(inputPath));
 
                 _transformer.InitialContextNode = inputDoc;
 
                 // Handle stopOnEntry for XSLT 2.0/3.0
-                if (stopOnEntry && useDebugging)
+                if (stopOnEntry && XsltEngineManager.DebugEnabled)
                 {
-                    XsltEngineManager.NotifyOutput("[trace] Saxon.Start: pause on entry");
+                    if (XsltEngineManager.IsTraceEnabled)
+                    {
+                        XsltEngineManager.NotifyOutput("[trace] Saxon.Start: pause on entry");
+                    }
                     PauseForBreakpoint(_currentStylesheet, 0, DebugStopReason.Entry, null);
                 }
 
                 // Set up output
                 var outPath = Path.ChangeExtension(_currentStylesheet, ".out.xml");
-                XsltEngineManager.NotifyOutput($"Writing transform output to: {outPath}");
+                if (XsltEngineManager.IsLogEnabled)
+                {
+                    XsltEngineManager.NotifyOutput($"Writing transform output to: {outPath}");
+                }
 
                 using (var writer = new StreamWriter(outPath))
                 {
                     var serializer = _processor.NewSerializer(writer);
-                    XsltEngineManager.NotifyOutput("[trace] Saxon.Start: run()");
+                    if (XsltEngineManager.TraceEnabled)
+                    {
+                        XsltEngineManager.NotifyOutput("[trace] Saxon.Start: run()");
+                    }
                     _transformer.Run(serializer);
                 }
 
@@ -316,7 +371,10 @@ public class SaxonEngine : IXsltEngine
                     var contextNavigator = navigator.SelectSingleNode(pathToContext);
                     if (contextNavigator != null)
                     {
-                        XsltEngineManager.NotifyOutput($"[trace] ConvertSaxonNodeToNavigator: positioned at {pathToContext}");
+                        if (XsltEngineManager.TraceEnabled)
+                        {
+                            XsltEngineManager.NotifyOutput($"[trace] ConvertSaxonNodeToNavigator: positioned at {pathToContext}");
+                        }
                         return contextNavigator;
                     }
                 }
@@ -326,7 +384,10 @@ public class SaxonEngine : IXsltEngine
         }
         catch (Exception ex)
         {
-            XsltEngineManager.NotifyOutput($"[trace] ConvertSaxonNodeToNavigator: exception - {ex.Message}");
+            if (XsltEngineManager.TraceEnabled)
+            {
+                XsltEngineManager.NotifyOutput($"[trace] ConvertSaxonNodeToNavigator: exception - {ex.Message}");
+            }
             return null;
         }
     }
@@ -380,20 +441,44 @@ public class SaxonEngine : IXsltEngine
 
     private void UpdateContext(XdmNode? context)
     {
+        if (XsltEngineManager.IsTraceEnabled)
+        {
+            if (context == null)
+            {
+                XsltEngineManager.NotifyOutput("[trace] UpdateContext: context is null");
+            }
+        }
+
         if (context == null)
         {
-            XsltEngineManager.NotifyOutput("[trace] UpdateContext: context is null");
             return;
         }
 
-        var navigator = ConvertSaxonNodeToNavigator(context);
-        if (navigator != null)
+        // Output detailed context information at traceall level (before conversion)
+        if (XsltEngineManager.IsTraceAllEnabled)
         {
-            XsltEngineManager.NotifyOutput($"[trace] UpdateContext: converted Saxon node to XPathNavigator, node={navigator.Name}");
+            var xpath = GetXPathToNode(context);
+            var nodeValue = context.StringValue ?? string.Empty;
+            var nodeType = context.NodeKind.ToString();
+            var nodeName = context.NodeName?.LocalName ?? "(no name)";
+            XsltEngineManager.NotifyOutput($"[traceall] Context update detail:\n" +
+                $"  Current node: <{nodeName}>\n" +
+                $"  XPath: {xpath}\n" +
+                $"  Node type: {nodeType}\n" +
+                $"  Value: {(nodeValue.Length > 100 ? nodeValue.Substring(0, 100) + "..." : nodeValue)}");
         }
-        else
+
+        var navigator = ConvertSaxonNodeToNavigator(context);
+        if (XsltEngineManager.IsTraceEnabled)
         {
-            XsltEngineManager.NotifyOutput("[trace] UpdateContext: conversion failed");
+            if (navigator != null)
+            {
+                XsltEngineManager.NotifyOutput($"[trace] UpdateContext: converted Saxon node to XPathNavigator, node={navigator.Name}");
+            }
+            else
+            {
+                XsltEngineManager.NotifyOutput("[trace] UpdateContext: conversion failed");
+            }
         }
 
         // Update the last context without triggering a stop
@@ -411,13 +496,16 @@ public class SaxonEngine : IXsltEngine
 
         // Convert XdmNode to XPathNavigator for debugger context
         var navigator = ConvertSaxonNodeToNavigator(context);
-        if (navigator != null)
+        if (XsltEngineManager.TraceEnabled)
         {
-            XsltEngineManager.NotifyOutput($"[trace] PauseForBreakpoint: converted context, node={navigator.Name}");
-        }
-        else
-        {
-            XsltEngineManager.NotifyOutput("[trace] PauseForBreakpoint: no context available");
+            if (navigator != null)
+            {
+                XsltEngineManager.NotifyOutput($"[trace] PauseForBreakpoint: converted context, node={navigator.Name}");
+            }
+            else
+            {
+                XsltEngineManager.NotifyOutput("[trace] PauseForBreakpoint: no context available");
+            }
         }
 
         XsltEngineManager.NotifyStopped(file, line, reason, navigator);
@@ -488,12 +576,15 @@ public class SaxonEngine : IXsltEngine
             .Where(tuple => tuple.Line.HasValue)
             .ToList();
 
-        try
+        if (XsltEngineManager.TraceEnabled)
         {
-            var linesText = string.Join(",", candidates.Select(c => c.Line!.Value).Distinct().OrderBy(x => x));
-            XsltEngineManager.NotifyOutput($"[trace] instrumented lines (saxon) for '{_currentStylesheet}': [{linesText}]");
+            try
+            {
+                var linesText = string.Join(",", candidates.Select(c => c.Line!.Value).Distinct().OrderBy(x => x));
+                XsltEngineManager.NotifyOutput($"[trace] instrumented lines (saxon) for '{_currentStylesheet}': [{linesText}]");
+            }
+            catch { }
         }
-        catch { }
 
         foreach (var (element, line) in candidates)
         {

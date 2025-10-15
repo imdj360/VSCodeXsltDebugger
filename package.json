@@ -70,6 +70,28 @@
                 "type": "boolean",
                 "default": false,
                 "description": "Pause immediately when the transform starts"
+              },
+              "debug": {
+                "type": "boolean",
+                "default": true,
+                "description": "Enable debugging mode (breakpoints and stepping)"
+              },
+              "logLevel": {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "log",
+                  "trace",
+                  "traceall"
+                ],
+                "enumDescriptions": [
+                  "Silent mode - no logging (only errors)",
+                  "General execution events (started, compiled, ended)",
+                  "Detailed troubleshooting (breakpoints, execution flow)",
+                  "Full XPath value tracking (context nodes, variable values)"
+                ],
+                "default": "log",
+                "description": "Logging verbosity level"
               }
             },
             "required": [

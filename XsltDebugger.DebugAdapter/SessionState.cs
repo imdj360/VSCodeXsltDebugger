@@ -11,11 +11,16 @@ internal sealed class SessionState
     private IXsltEngine? _engine;
 
     public IXsltEngine? Engine => _engine;
+    public bool DebugEnabled { get; private set; } = true;
+    public LogLevel CurrentLogLevel { get; private set; } = LogLevel.Log;
 
-    public void SetEngine(IXsltEngine engine)
+    public void SetEngine(IXsltEngine engine, bool debug = true, LogLevel logLevel = LogLevel.Log)
     {
         _engine = engine ?? throw new ArgumentNullException(nameof(engine));
+        DebugEnabled = debug;
+        CurrentLogLevel = logLevel;
         XsltEngineManager.ActiveEngine = engine;
+        XsltEngineManager.SetDebugFlags(debug, logLevel);
         ApplyBreakpointsToEngine();
     }
 

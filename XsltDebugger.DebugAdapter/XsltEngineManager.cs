@@ -14,24 +14,59 @@ public static class XsltEngineManager
     public static DebugStopReason LastStopReason { get; private set; } = DebugStopReason.Breakpoint;
     public static XPathNavigator? LastContext { get; private set; }
 
+    public static bool DebugEnabled { get; private set; } = true;
+    public static LogLevel CurrentLogLevel { get; private set; } = LogLevel.Log;
+
+    // Convenience properties for checking log levels
+    public static bool IsLogEnabled => CurrentLogLevel >= LogLevel.Log;
+    public static bool IsTraceEnabled => CurrentLogLevel >= LogLevel.Trace;
+    public static bool IsTraceAllEnabled => CurrentLogLevel >= LogLevel.TraceAll;
+
+    // Legacy property for backward compatibility
+    public static bool TraceEnabled => IsTraceEnabled;
+
     public static event Action<string, int, DebugStopReason>? EngineStopped;
 
     public static event Action<string>? EngineOutput;
 
     public static event Action<int>? EngineTerminated;
 
+    public static void SetDebugFlags(bool debug, LogLevel logLevel)
+    {
+        DebugEnabled = debug;
+        CurrentLogLevel = logLevel;
+        if (IsTraceEnabled)
+        {
+            NotifyOutput($"[trace] Debug flags set: debug={debug}, logLevel={logLevel}");
+        }
+    }
+
     public static void NotifyStopped(string file, int line, DebugStopReason reason, XPathNavigator? context)
     {
+        if (!DebugEnabled)
+        {
+            return;
+        }
+
         LastStop = (file, line);
         LastStopReason = reason;
         LastContext = context?.Clone();
+
+        if (TraceEnabled)
+        {
+            NotifyOutput($"[trace] Stopped at {file}:{line}, reason={reason}");
+        }
+
         EngineStopped?.Invoke(file, line, reason);
     }
 
     public static void UpdateContext(XPathNavigator? context)
     {
         LastContext = context?.Clone();
-        NotifyOutput($"[trace] XsltEngineManager.UpdateContext: LastContext={(LastContext != null ? $"SET to {LastContext.Name}" : "set to NULL")}");
+        if (TraceEnabled)
+        {
+            NotifyOutput($"[trace] XsltEngineManager.UpdateContext: LastContext={(LastContext != null ? $"SET to {LastContext.Name}" : "set to NULL")}");
+        }
     }
 
     public static void NotifyOutput(string message)
@@ -52,6 +87,8 @@ public static class XsltEngineManager
         LastStop = null;
         LastStopReason = DebugStopReason.Breakpoint;
         LastContext = null;
+        DebugEnabled = true;
+        CurrentLogLevel = LogLevel.Log;
     }
 }
 
@@ -60,4 +97,12 @@ public enum DebugStopReason
     Breakpoint,
     Entry,
     Step
+}
+
+public enum LogLevel
+{
+    None = 0,      // Silent - only errors
+    Log = 1,       // General execution events
+    Trace = 2,     // Detailed troubleshooting
+    TraceAll = 3   // Full XPath value tracking
 }
