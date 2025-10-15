@@ -2,6 +2,8 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 
+const output = vscode.window.createOutputChannel('XSLT Debugger');
+
 class XsltDebugConfigurationProvider implements vscode.DebugConfigurationProvider {
 	provideDebugConfigurations(folder: vscode.WorkspaceFolder | undefined): vscode.DebugConfiguration[] {
 		const baseFolder = folder?.uri.fsPath ?? '${workspaceFolder}';
@@ -44,6 +46,11 @@ class XsltDebugConfigurationProvider implements vscode.DebugConfigurationProvide
 		config.xml = resolvedXml;
 		config.engine = config.engine ?? 'compiled';
 		config.stopOnEntry = !!config.stopOnEntry;
+
+		try {
+			output.appendLine(`[xslt] resolved config: engine=${config.engine}, stylesheet=${config.stylesheet}, xml=${config.xml}, stopOnEntry=${config.stopOnEntry}`);
+			output.show(true);
+		} catch {}
 
 		return config;
 	}
@@ -90,6 +97,11 @@ class XsltDebugAdapterDescriptorFactory implements vscode.DebugAdapterDescriptor
 			cwd: path.dirname(adapterPath)
 		};
 		const args = [adapterPath];
+
+		try {
+			output.appendLine(`[xslt] adapter: dotnet ${adapterPath}`);
+			output.show(true);
+		} catch {}
 
 		return new vscode.DebugAdapterExecutable('dotnet', args, options);
 	}

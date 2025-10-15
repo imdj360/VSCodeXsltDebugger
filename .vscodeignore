@@ -51,6 +51,9 @@ XsltDebugger.DebugAdapter/bin/Debug/net8.0/runtimes/**
 !XsltDebugger.DebugAdapter/bin/Debug/net8.0/runtimes/
 !XsltDebugger.DebugAdapter/bin/Debug/net8.0/runtimes/win-x64/**
 !XsltDebugger.DebugAdapter/bin/Debug/net8.0/runtimes/osx-arm64/**
+# Include IKVM managed assemblies that are RID-scoped under osx/win (not arch-suffixed)
+!XsltDebugger.DebugAdapter/bin/Debug/net8.0/runtimes/osx/lib/net8.0/**
+!XsltDebugger.DebugAdapter/bin/Debug/net8.0/runtimes/win/lib/net8.0/**
 
 # OS generated files
 .DS_Store

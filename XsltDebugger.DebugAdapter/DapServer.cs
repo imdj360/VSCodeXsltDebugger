@@ -29,6 +29,8 @@ internal sealed class DapServer
     private readonly object _variablesLock = new();
     private readonly Dictionary<int, Func<List<VariableDescriptor>>> _variableProviders = new();
     private int _nextVariableReference = 1;
+    private bool _configurationDone = false;
+    private (string engineType, string stylesheet, string xml, bool stopOnEntry)? _pendingLaunch;
 
     public DapServer(Stream input, Stream output, SessionState state)
     {
@@ -122,7 +124,11 @@ internal sealed class DapServer
                 HandleSetBreakpoints(requestSeq, arguments);
                 break;
             case "configurationDone":
+                _configurationDone = true;
+                // Extra trace to confirm receipt of configurationDone
+                try { SendOutput("[trace] received configurationDone", isError: false); } catch { }
                 SendResponse(requestSeq, command, new { });
+                TryStartPendingLaunch();
                 break;
             case "launch":
                 await HandleLaunchAsync(requestSeq, arguments).ConfigureAwait(false);
@@ -222,6 +228,13 @@ internal sealed class DapServer
         var engineLines = lines.Where(l => l > 0).ToList();
 
         var resolvedLines = _state.SetBreakpoints(sourcePath, engineLines);
+        try
+        {
+            var norm = NormalizePath(sourcePath);
+            var linesText = string.Join(",", resolvedLines);
+            SendOutput($"[trace] setBreakpoints for '{norm}' => [{linesText}]", isError: false);
+        }
+        catch { }
         var breakpointBodies = new List<object>();
         foreach (var line in resolvedLines)
         {
@@ -230,6 +243,13 @@ internal sealed class DapServer
         }
 
         SendResponse(requestSeq, "setBreakpoints", new { breakpoints = breakpointBodies });
+
+        // If launch is pending but configurationDone hasn't arrived, start now to avoid stalls.
+        if (_pendingLaunch is not null && !_configurationDone)
+        {
+            try { SendOutput("[trace] configurationDone not received; starting engine after setBreakpoints", isError: false); } catch { }
+            TryStartPendingLaunch();
+        }
     }
 
     private Task HandleLaunchAsync(int requestSeq, JsonElement arguments)
@@ -263,11 +283,89 @@ internal sealed class DapServer
             engine.SetBreakpoints(allBreakpoints);
         }
 
-        _ = Task.Run(() => engine.StartAsync(stylesheet!, xml!, stopOnEntry));
+        try
+        {
+            var normSheet = NormalizePath(stylesheet!);
+            var normXml = NormalizePath(xml!);
+            SendOutput($"[trace] launch engine={engineType}, stylesheet={normSheet}, xml={normXml}, stopOnEntry={stopOnEntry}", isError: false);
+        }
+        catch { }
+
+        // Queue launch until configurationDone to ensure breakpoints are set and client is ready for 'stopped' events.
+        _pendingLaunch = (engineType, stylesheet!, xml!, stopOnEntry);
+        if (_configurationDone)
+        {
+            TryStartPendingLaunch();
+        }
 
         SendResponse(requestSeq, "launch", new { });
-        SendOutput($"Starting XSLT transform using engine '{engineType}'.", isError: false);
+        if (!_configurationDone)
+        {
+            SendOutput("[trace] launch queued until configurationDone", isError: false);
+        }
         return Task.CompletedTask;
+    }
+
+    private void TryStartPendingLaunch()
+    {
+        if (_pendingLaunch is null)
+        {
+            return;
+        }
+
+        var launch = _pendingLaunch.Value;
+        _pendingLaunch = null;
+
+        var engine = _state.Engine;
+        if (engine == null)
+        {
+            SendOutput("[ERR] No engine available to start.", isError: true);
+            return;
+        }
+
+        try
+        {
+            SendOutput($"[trace] starting engine now: {launch.engineType}", isError: false);
+            var task = engine.StartAsync(launch.stylesheet, launch.xml, launch.stopOnEntry);
+            _ = task.ContinueWith(t =>
+            {
+                if (t.IsFaulted)
+                {
+                    var ex = t.Exception?.GetBaseException() ?? t.Exception;
+                    if (ex != null)
+                    {
+                        try { SendOutput($"[ERR] engine task faulted: {ex.Message}", isError: true); } catch { }
+                    }
+                }
+                else if (t.IsCanceled)
+                {
+                    try { SendOutput("[trace] engine task canceled", isError: false); } catch { }
+                }
+                else
+                {
+                    try { SendOutput("[trace] engine task completed", isError: false); } catch { }
+                }
+            });
+            SendOutput($"Starting XSLT transform using engine '{launch.engineType}'.", isError: false);
+        }
+        catch (Exception ex)
+        {
+            SendOutput($"[ERR] Failed to start engine: {ex.Message}", isError: true);
+        }
+    }
+
+    private static string NormalizePath(string path)
+    {
+        var result = path ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(result))
+        {
+            if (result.StartsWith("file://", StringComparison.OrdinalIgnoreCase))
+            {
+                try { result = new Uri(result).LocalPath; } catch { }
+            }
+            try { result = Path.GetFullPath(result); } catch { }
+        }
+        return result;
     }
 
     private void HandleThreads(int requestSeq)

@@ -55,7 +55,13 @@
                 "type": "string",
                 "enum": [
                   "compiled",
-                  "saxonnet"
+                  "saxonnet",
+                  "saxon"
+                ],
+                "enumDescriptions": [
+                  "XSLT 1.0 engine with inline C# support",
+                  "Saxon.NET engine for XSLT 2.0/3.0",
+                  "Alias for saxonnet"
                 ],
                 "default": "compiled",
                 "description": "Execution engine to use for the transform"

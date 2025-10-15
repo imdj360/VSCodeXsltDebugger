@@ -14,10 +14,10 @@ rm -rf XsltDebugger.DebugAdapter/bin/Debug/net8.0/runtimes/android-*
 rm -rf XsltDebugger.DebugAdapter/bin/Debug/net8.0/runtimes/linux-*
 rm -rf XsltDebugger.DebugAdapter/bin/Debug/net8.0/runtimes/linux
 rm -rf XsltDebugger.DebugAdapter/bin/Debug/net8.0/runtimes/osx-x64
-rm -rf XsltDebugger.DebugAdapter/bin/Debug/net8.0/runtimes/osx
+# Keep runtimes/osx for RID-scoped IKVM managed assemblies (IKVM.Java.dll, etc.)
 rm -rf XsltDebugger.DebugAdapter/bin/Debug/net8.0/runtimes/win-arm64
 rm -rf XsltDebugger.DebugAdapter/bin/Debug/net8.0/runtimes/win-x86
-rm -rf XsltDebugger.DebugAdapter/bin/Debug/net8.0/runtimes/win
+# Keep runtimes/win for RID-scoped IKVM managed assemblies (IKVM.Java.dll, etc.)
 rm -rf XsltDebugger.DebugAdapter/bin/Debug/net8.0/runtimes/freebsd*
 rm -rf XsltDebugger.DebugAdapter/bin/Debug/net8.0/runtimes/illumos*
 rm -rf XsltDebugger.DebugAdapter/bin/Debug/net8.0/runtimes/ios*
