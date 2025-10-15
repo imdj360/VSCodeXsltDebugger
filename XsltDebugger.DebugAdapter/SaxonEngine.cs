@@ -247,6 +247,9 @@ public class SaxonEngine : IXsltEngine
         var normalized = NormalizePath(file);
         var stepRequested = ConsumeStepRequest();
 
+        // Always update the context for evaluation, even when not pausing
+        UpdateContext(contextNode);
+
         if (IsBreakpointHit(normalized, line))
         {
             PauseForBreakpoint(normalized, line, DebugStopReason.Breakpoint, contextNode);
@@ -271,6 +274,132 @@ public class SaxonEngine : IXsltEngine
         return false;
     }
 
+    private XPathNavigator? ConvertSaxonNodeToNavigator(XdmNode? context)
+    {
+        if (context == null)
+        {
+            return null;
+        }
+
+        try
+        {
+            // Get the root document node to preserve the full document hierarchy
+            // This is essential for absolute XPath expressions like /ShipmentConfirmation/Reference
+            var rootNode = context;
+            while (rootNode.Parent != null)
+            {
+                rootNode = (XdmNode)rootNode.Parent;
+            }
+
+            // Serialize the entire document to XML string
+            using (var stringWriter = new StringWriter())
+            {
+                var serializer = _processor!.NewSerializer(stringWriter);
+                serializer.SetOutputProperty(Serializer.METHOD, "xml");
+                serializer.SetOutputProperty(Serializer.OMIT_XML_DECLARATION, "yes");
+                serializer.SerializeXdmValue(rootNode);
+
+                var xmlString = stringWriter.ToString();
+
+                // Parse the string into an XmlDocument
+                var xmlDoc = new XmlDocument();
+                xmlDoc.LoadXml(xmlString);
+
+                // Create navigator from the .NET XmlDocument
+                var navigator = xmlDoc.CreateNavigator();
+
+                // Now navigate to the equivalent position of the original context node
+                // We'll use the XPath to the original node to position the navigator correctly
+                var pathToContext = GetXPathToNode(context);
+                if (!string.IsNullOrEmpty(pathToContext) && pathToContext != "/")
+                {
+                    var contextNavigator = navigator.SelectSingleNode(pathToContext);
+                    if (contextNavigator != null)
+                    {
+                        XsltEngineManager.NotifyOutput($"[trace] ConvertSaxonNodeToNavigator: positioned at {pathToContext}");
+                        return contextNavigator;
+                    }
+                }
+
+                return navigator;
+            }
+        }
+        catch (Exception ex)
+        {
+            XsltEngineManager.NotifyOutput($"[trace] ConvertSaxonNodeToNavigator: exception - {ex.Message}");
+            return null;
+        }
+    }
+
+    private string GetXPathToNode(XdmNode node)
+    {
+        // Build the XPath to this node from the root
+        var pathParts = new List<string>();
+        var current = node;
+
+        while (current != null && current.NodeKind != XmlNodeType.Document)
+        {
+            if (current.NodeKind == XmlNodeType.Element)
+            {
+                var name = current.NodeName?.LocalName ?? "";
+                // Count preceding siblings with the same name for position predicate
+                var position = 1;
+                var sibling = current;
+
+                // Move to parent, then iterate children to find position
+                var parent = current.Parent as XdmNode;
+                if (parent != null)
+                {
+                    var children = parent.Children().ToList();
+                    var index = 0;
+                    foreach (var child in children)
+                    {
+                        if (child is XdmNode childNode && childNode.NodeKind == XmlNodeType.Element)
+                        {
+                            if (childNode.NodeName?.LocalName == name)
+                            {
+                                index++;
+                                if (childNode.Implementation == current.Implementation)
+                                {
+                                    position = index;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                pathParts.Insert(0, $"{name}[{position}]");
+            }
+
+            current = current.Parent as XdmNode;
+        }
+
+        return pathParts.Count > 0 ? "/" + string.Join("/", pathParts) : "/";
+    }
+
+    private void UpdateContext(XdmNode? context)
+    {
+        if (context == null)
+        {
+            XsltEngineManager.NotifyOutput("[trace] UpdateContext: context is null");
+            return;
+        }
+
+        var navigator = ConvertSaxonNodeToNavigator(context);
+        if (navigator != null)
+        {
+            XsltEngineManager.NotifyOutput($"[trace] UpdateContext: converted Saxon node to XPathNavigator, node={navigator.Name}");
+        }
+        else
+        {
+            XsltEngineManager.NotifyOutput("[trace] UpdateContext: conversion failed");
+        }
+
+        // Update the last context without triggering a stop
+        XsltEngineManager.UpdateContext(navigator);
+    }
+
     private void PauseForBreakpoint(string file, int line, DebugStopReason reason, XdmNode? context)
     {
         TaskCompletionSource<bool>? localTcs;
@@ -281,26 +410,14 @@ public class SaxonEngine : IXsltEngine
         }
 
         // Convert XdmNode to XPathNavigator for debugger context
-        XPathNavigator? navigator = null;
-        if (context != null)
+        var navigator = ConvertSaxonNodeToNavigator(context);
+        if (navigator != null)
         {
-            try
-            {
-                // Saxon's XdmNode wraps a .NET XPathNavigator
-                var underlyingValue = context.Implementation;
-                if (underlyingValue is XPathNavigator nav)
-                {
-                    navigator = nav.Clone();
-                }
-                else if (underlyingValue is System.Xml.XmlNode xmlNode)
-                {
-                    navigator = xmlNode.CreateNavigator();
-                }
-            }
-            catch
-            {
-                // If conversion fails, continue with null navigator
-            }
+            XsltEngineManager.NotifyOutput($"[trace] PauseForBreakpoint: converted context, node={navigator.Name}");
+        }
+        else
+        {
+            XsltEngineManager.NotifyOutput("[trace] PauseForBreakpoint: no context available");
         }
 
         XsltEngineManager.NotifyStopped(file, line, reason, navigator);

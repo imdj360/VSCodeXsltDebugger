@@ -71,7 +71,16 @@ public class SaxonDebugExtensionCall : ExtensionFunctionCall
                 if (contextArg.MoveNext() && contextArg.Current is XdmNode node)
                 {
                     contextNode = node;
+                    XsltEngineManager.NotifyOutput($"[trace] dbg:break context node: {node.NodeKind}, name={node.NodeName?.LocalName ?? "(no name)"}");
                 }
+                else
+                {
+                    XsltEngineManager.NotifyOutput($"[trace] dbg:break no context node available at line {line}");
+                }
+            }
+            else
+            {
+                XsltEngineManager.NotifyOutput($"[trace] dbg:break only {arguments.Length} argument(s) at line {line}");
             }
 
             _engine.RegisterBreakpointHit(_stylesheetPath, line, contextNode);

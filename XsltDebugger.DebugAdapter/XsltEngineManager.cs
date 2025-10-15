@@ -28,6 +28,12 @@ public static class XsltEngineManager
         EngineStopped?.Invoke(file, line, reason);
     }
 
+    public static void UpdateContext(XPathNavigator? context)
+    {
+        LastContext = context?.Clone();
+        NotifyOutput($"[trace] XsltEngineManager.UpdateContext: LastContext={(LastContext != null ? $"SET to {LastContext.Name}" : "set to NULL")}");
+    }
+
     public static void NotifyOutput(string message)
     {
         if (!string.IsNullOrWhiteSpace(message))

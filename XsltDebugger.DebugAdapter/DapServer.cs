@@ -439,6 +439,8 @@ internal sealed class DapServer
         }
 
         var context = XsltEngineManager.LastContext;
+        SendOutput($"[trace] HandleEvaluate: expression='{expression}', context={(context != null ? $"available (node={context.Name})" : "NULL")}", isError: false);
+
         if (context == null)
         {
             const string noContextMessage = "No active XSLT context available for evaluation.";
