@@ -1,0 +1,348 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Xml.XPath;
+using FluentAssertions;
+using Xunit;
+using XsltDebugger.DebugAdapter;
+
+namespace XsltDebugger.Tests;
+
+/// <summary>
+/// Integration tests for end-to-end breakpoint handling and debugging workflow
+/// </summary>
+public class BreakpointIntegrationTests : IDisposable
+{
+    private readonly string _tempDir;
+    private readonly string _testStylesheetPath;
+    private readonly string _testXmlPath;
+
+    public BreakpointIntegrationTests()
+    {
+        _tempDir = Path.Combine(Path.GetTempPath(), $"XsltDebuggerTests_{Guid.NewGuid()}");
+        Directory.CreateDirectory(_tempDir);
+
+        _testStylesheetPath = Path.Combine(_tempDir, "test.xslt");
+        _testXmlPath = Path.Combine(_tempDir, "test.xml");
+
+        CreateTestFiles();
+
+        // Reset static state
+        XsltEngineManager.SetDebugFlags(false, LogLevel.None);
+        XsltEngineManager.ClearVariables();
+    }
+
+    public void Dispose()
+    {
+        // Clean up temp files
+        try
+        {
+            if (Directory.Exists(_tempDir))
+            {
+                Directory.Delete(_tempDir, recursive: true);
+            }
+        }
+        catch
+        {
+            // Ignore cleanup errors
+        }
+
+        // Reset static state
+        XsltEngineManager.SetDebugFlags(false, LogLevel.None);
+        XsltEngineManager.ClearVariables();
+    }
+
+    private void CreateTestFiles()
+    {
+        // Create a simple XSLT stylesheet
+        var stylesheet = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<xsl:stylesheet version=""1.0"" xmlns:xsl=""http://www.w3.org/1999/XSL/Transform"">
+    <xsl:output method=""xml"" indent=""yes""/>
+
+    <xsl:template match=""/"">
+        <output>
+            <xsl:apply-templates select=""items/item""/>
+        </output>
+    </xsl:template>
+
+    <xsl:template match=""item"">
+        <xsl:variable name=""itemId"" select=""@id""/>
+        <processed>
+            <id><xsl:value-of select=""$itemId""/></id>
+            <name><xsl:value-of select=""name""/></name>
+        </processed>
+    </xsl:template>
+</xsl:stylesheet>";
+
+        File.WriteAllText(_testStylesheetPath, stylesheet);
+
+        // Create a simple XML input
+        var xml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<items>
+    <item id=""1"">
+        <name>First Item</name>
+    </item>
+    <item id=""2"">
+        <name>Second Item</name>
+    </item>
+</items>";
+
+        File.WriteAllText(_testXmlPath, xml);
+    }
+
+    [Fact]
+    public void SessionState_ShouldManageBreakpointsCorrectly()
+    {
+        // Arrange
+        var state = new SessionState();
+        var file1 = Path.Combine(_tempDir, "file1.xslt");
+        var file2 = Path.Combine(_tempDir, "file2.xslt");
+
+        // Act
+        state.SetBreakpoints(file1, new[] { 10, 20, 30 });
+        state.SetBreakpoints(file2, new[] { 15, 25 });
+
+        // Assert
+        state.GetBreakpointsFor(file1).Should().HaveCount(3);
+        state.GetBreakpointsFor(file2).Should().HaveCount(2);
+
+        var allBreakpoints = state.GetAllBreakpoints();
+        allBreakpoints.Should().HaveCount(2);
+        allBreakpoints.Values.SelectMany(x => x).Should().HaveCount(5);
+    }
+
+    [Fact]
+    public void SessionState_ShouldHandleBreakpointUpdates()
+    {
+        // Arrange
+        var state = new SessionState();
+        var filePath = _testStylesheetPath;
+
+        // Act - Set initial breakpoints
+        state.SetBreakpoints(filePath, new[] { 10, 20, 30 });
+
+        // Act - Update with different breakpoints
+        state.SetBreakpoints(filePath, new[] { 15, 25 });
+
+        // Assert - Old breakpoints should be replaced
+        var breakpoints = state.GetBreakpointsFor(filePath);
+        breakpoints.Should().HaveCount(2);
+        breakpoints.Should().NotContain(10);
+        breakpoints.Should().Contain(15);
+        breakpoints.Should().Contain(25);
+    }
+
+    [Fact]
+    public void XsltEngineManager_ShouldHandleVariableStorage()
+    {
+        // Arrange
+        XsltEngineManager.ClearVariables();
+
+        // Act
+        XsltEngineManager.StoreVariable("var1", "value1");
+        XsltEngineManager.StoreVariable("var2", 42);
+        XsltEngineManager.StoreVariable("var3", new[] { 1, 2, 3 });
+
+        // Assert
+        XsltEngineManager.Variables.Should().HaveCount(3);
+        XsltEngineManager.Variables["var1"].Should().Be("value1");
+        XsltEngineManager.Variables["var2"].Should().Be(42);
+        XsltEngineManager.Variables["var3"].Should().BeEquivalentTo(new[] { 1, 2, 3 });
+    }
+
+    [Fact]
+    public void XsltEngineManager_ShouldTrackLastStopLocation()
+    {
+        // Act
+        XsltEngineManager.NotifyStopped(_testStylesheetPath, 42, DebugStopReason.Breakpoint);
+
+        // Assert
+        XsltEngineManager.LastStop.Should().NotBeNull();
+        XsltEngineManager.LastStop!.Value.file.Should().Be(_testStylesheetPath);
+        XsltEngineManager.LastStop!.Value.line.Should().Be(42);
+    }
+
+    [Fact]
+    public void XsltEngineManager_ShouldUpdateContext()
+    {
+        // Arrange
+        var doc = new XPathDocument(new StringReader(_testXmlPath.Contains(".xml") ?
+            File.ReadAllText(_testXmlPath) : "<root><child>test</child></root>"));
+        var navigator = doc.CreateNavigator();
+        navigator.MoveToRoot();
+        navigator.MoveToFirstChild(); // Move to root element
+
+        // Act
+        XsltEngineManager.UpdateContext(navigator);
+
+        // Assert
+        XsltEngineManager.LastContext.Should().NotBeNull();
+        XsltEngineManager.LastContext!.NodeType.Should().Be(XPathNodeType.Element);
+    }
+
+    [Fact]
+    public void MultipleEngines_ShouldBeCreatedIndependently()
+    {
+        // Act
+        var engine1 = XsltEngineFactory.CreateEngine(XsltEngineType.Compiled);
+        var engine2 = XsltEngineFactory.CreateEngine(XsltEngineType.Compiled);
+        var saxonEngine = XsltEngineFactory.CreateEngine(XsltEngineType.SaxonNet);
+
+        // Assert
+        engine1.Should().NotBeSameAs(engine2);
+        engine1.Should().BeOfType<XsltCompiledEngine>();
+        engine2.Should().BeOfType<XsltCompiledEngine>();
+        saxonEngine.Should().BeOfType<SaxonEngine>();
+    }
+
+    [Fact]
+    public void SessionState_ShouldApplyBreakpointsToEngine()
+    {
+        // Arrange
+        var state = new SessionState();
+        var mockEngine = new MockXsltEngine();
+
+        state.SetBreakpoints(_testStylesheetPath, new[] { 10, 20, 30 });
+
+        // Act
+        state.SetEngine(mockEngine);
+
+        // Assert
+        mockEngine.BreakpointsSet.Should().HaveCount(3);
+        mockEngine.BreakpointsSet.Should().Contain((_testStylesheetPath, 10));
+        mockEngine.BreakpointsSet.Should().Contain((_testStylesheetPath, 20));
+        mockEngine.BreakpointsSet.Should().Contain((_testStylesheetPath, 30));
+    }
+
+    [Fact]
+    public void EventHandlers_ShouldReceiveStopNotifications()
+    {
+        // Arrange
+        string? capturedFile = null;
+        int? capturedLine = null;
+        DebugStopReason? capturedReason = null;
+
+        XsltEngineManager.EngineStopped += (file, line, reason) =>
+        {
+            capturedFile = file;
+            capturedLine = line;
+            capturedReason = reason;
+        };
+
+        // Act
+        XsltEngineManager.NotifyStopped(_testStylesheetPath, 15, DebugStopReason.Step);
+
+        // Assert
+        capturedFile.Should().Be(_testStylesheetPath);
+        capturedLine.Should().Be(15);
+        capturedReason.Should().Be(DebugStopReason.Step);
+    }
+
+    [Fact]
+    public void EventHandlers_ShouldReceiveOutputNotifications()
+    {
+        // Arrange
+        string? capturedOutput = null;
+        XsltEngineManager.EngineOutput += (output) => capturedOutput = output;
+
+        // Act
+        XsltEngineManager.NotifyOutput("Test debug output");
+
+        // Assert
+        capturedOutput.Should().Be("Test debug output");
+    }
+
+    [Fact]
+    public void DebugFlags_ShouldControlDebugMode()
+    {
+        // Arrange - Debug disabled
+        XsltEngineManager.SetDebugFlags(false, LogLevel.None);
+
+        // Assert
+        XsltEngineManager.DebugEnabled.Should().BeFalse();
+        XsltEngineManager.CurrentLogLevel.Should().Be(LogLevel.None);
+
+        // Act - Enable debug
+        XsltEngineManager.SetDebugFlags(true, LogLevel.TraceAll);
+
+        // Assert
+        XsltEngineManager.DebugEnabled.Should().BeTrue();
+        XsltEngineManager.CurrentLogLevel.Should().Be(LogLevel.TraceAll);
+    }
+
+    [Fact]
+    public void BreakpointWorkflow_ShouldWorkEndToEnd()
+    {
+        // This test simulates a complete debugging workflow:
+        // 1. Create session
+        // 2. Set breakpoints
+        // 3. Create engine
+        // 4. Apply breakpoints to engine
+        // 5. Verify state
+
+        // Arrange
+        var session = new SessionState();
+        var mockEngine = new MockXsltEngine();
+
+        // Act - Step 1: Set breakpoints
+        session.SetBreakpoints(_testStylesheetPath, new[] { 10, 15, 20 });
+
+        // Act - Step 2: Configure debugging
+        XsltEngineManager.SetDebugFlags(true, LogLevel.Log);
+
+        // Act - Step 3: Attach engine
+        session.SetEngine(mockEngine);
+
+        // Assert - Verify complete state
+        session.Engine.Should().Be(mockEngine);
+        mockEngine.BreakpointsSet.Should().HaveCount(3);
+        XsltEngineManager.DebugEnabled.Should().BeTrue();
+        session.GetBreakpointsFor(_testStylesheetPath).Should().HaveCount(3);
+    }
+
+    // Mock implementation for testing
+    private class MockXsltEngine : IXsltEngine
+    {
+        public List<(string file, int line)> BreakpointsSet { get; } = new();
+        public bool Started { get; private set; }
+        public bool Terminated { get; private set; }
+
+        public Task StartAsync(string stylesheetPath, string xmlPath, bool stopOnEntry)
+        {
+            Started = true;
+            return Task.CompletedTask;
+        }
+
+        public void SetBreakpoints(IEnumerable<(string file, int line)> breakpoints)
+        {
+            BreakpointsSet.AddRange(breakpoints);
+        }
+
+        public Task ContinueAsync()
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task StepOverAsync()
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task StepInAsync()
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task StepOutAsync()
+        {
+            return Task.CompletedTask;
+        }
+
+        public void Terminate()
+        {
+            Terminated = true;
+        }
+    }
+}

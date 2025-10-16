@@ -1,0 +1,291 @@
+using System;
+using System.Collections.Generic;
+using System.Xml.XPath;
+using FluentAssertions;
+using Xunit;
+using XsltDebugger.DebugAdapter;
+
+namespace XsltDebugger.Tests;
+
+/// <summary>
+/// Tests for XsltEngineManager to ensure event handling and state management work correctly
+/// </summary>
+public class XsltEngineManagerTests : IDisposable
+{
+    public XsltEngineManagerTests()
+    {
+        // Reset static state before each test
+        XsltEngineManager.SetDebugFlags(false, LogLevel.None);
+        XsltEngineManager.ClearVariables();
+    }
+
+    public void Dispose()
+    {
+        // Clean up after each test
+        XsltEngineManager.SetDebugFlags(false, LogLevel.None);
+        XsltEngineManager.ClearVariables();
+    }
+
+    [Fact]
+    public void SetDebugFlags_ShouldEnableDebugMode()
+    {
+        // Act
+        XsltEngineManager.SetDebugFlags(debug: true, LogLevel.Log);
+
+        // Assert
+        XsltEngineManager.DebugEnabled.Should().BeTrue();
+        XsltEngineManager.CurrentLogLevel.Should().Be(LogLevel.Log);
+    }
+
+    [Fact]
+    public void SetDebugFlags_ShouldDisableDebugMode()
+    {
+        // Arrange
+        XsltEngineManager.SetDebugFlags(debug: true, LogLevel.Log);
+
+        // Act
+        XsltEngineManager.SetDebugFlags(debug: false, LogLevel.None);
+
+        // Assert
+        XsltEngineManager.DebugEnabled.Should().BeFalse();
+        XsltEngineManager.CurrentLogLevel.Should().Be(LogLevel.None);
+    }
+
+    [Theory]
+    [InlineData(LogLevel.None)]
+    [InlineData(LogLevel.Log)]
+    [InlineData(LogLevel.Trace)]
+    [InlineData(LogLevel.TraceAll)]
+    public void SetDebugFlags_ShouldSetLogLevel(LogLevel level)
+    {
+        // Act
+        XsltEngineManager.SetDebugFlags(true, level);
+
+        // Assert
+        XsltEngineManager.CurrentLogLevel.Should().Be(level);
+    }
+
+    [Fact]
+    public void NotifyStopped_ShouldTriggerEngineStopped()
+    {
+        // Arrange
+        string? capturedFile = null;
+        int? capturedLine = null;
+        DebugStopReason? capturedReason = null;
+
+        XsltEngineManager.EngineStopped += (file, line, reason) =>
+        {
+            capturedFile = file;
+            capturedLine = line;
+            capturedReason = reason;
+        };
+
+        // Act
+        XsltEngineManager.NotifyStopped("/test/file.xslt", 42, DebugStopReason.Breakpoint, null);
+
+        // Assert
+        capturedFile.Should().Be("/test/file.xslt");
+        capturedLine.Should().Be(42);
+        capturedReason.Should().Be(DebugStopReason.Breakpoint);
+    }
+
+    [Fact]
+    public void NotifyStopped_ShouldUpdateLastStop()
+    {
+        // Act
+        XsltEngineManager.NotifyStopped("/test/file.xslt", 42, DebugStopReason.Breakpoint, null);
+
+        // Assert
+        XsltEngineManager.LastStop.Should().NotBeNull();
+        XsltEngineManager.LastStop!.Value.file.Should().Be("/test/file.xslt");
+        XsltEngineManager.LastStop!.Value.line.Should().Be(42);
+    }
+
+    [Fact]
+    public void UpdateContext_ShouldStoreContext()
+    {
+        // Arrange
+        var doc = new XPathDocument(new System.IO.StringReader("<root><child>test</child></root>"));
+        var navigator = doc.CreateNavigator();
+
+        // Act
+        XsltEngineManager.UpdateContext(navigator);
+
+        // Assert
+        XsltEngineManager.LastContext.Should().NotBeNull();
+        XsltEngineManager.LastContext!.Name.Should().Be("root");
+    }
+
+    [Fact]
+    public void UpdateContext_WithNull_ShouldClearContext()
+    {
+        // Arrange
+        var doc = new XPathDocument(new System.IO.StringReader("<root/>"));
+        var navigator = doc.CreateNavigator();
+        XsltEngineManager.UpdateContext(navigator);
+
+        // Act
+        XsltEngineManager.UpdateContext(null);
+
+        // Assert
+        XsltEngineManager.LastContext.Should().BeNull();
+    }
+
+    [Fact]
+    public void StoreVariable_ShouldAddVariable()
+    {
+        // Act
+        XsltEngineManager.StoreVariable("testVar", "testValue");
+
+        // Assert
+        XsltEngineManager.Variables.Should().ContainKey("testVar");
+        XsltEngineManager.Variables["testVar"].Should().Be("testValue");
+    }
+
+    [Fact]
+    public void StoreVariable_ShouldUpdateExistingVariable()
+    {
+        // Arrange
+        XsltEngineManager.StoreVariable("testVar", "oldValue");
+
+        // Act
+        XsltEngineManager.StoreVariable("testVar", "newValue");
+
+        // Assert
+        XsltEngineManager.Variables["testVar"].Should().Be("newValue");
+    }
+
+    [Fact]
+    public void StoreVariable_ShouldHandleNullValue()
+    {
+        // Act
+        XsltEngineManager.StoreVariable("testVar", null);
+
+        // Assert
+        XsltEngineManager.Variables.Should().ContainKey("testVar");
+        XsltEngineManager.Variables["testVar"].Should().BeNull();
+    }
+
+    [Fact]
+    public void ClearVariables_ShouldRemoveAllVariables()
+    {
+        // Arrange
+        XsltEngineManager.StoreVariable("var1", "value1");
+        XsltEngineManager.StoreVariable("var2", "value2");
+        XsltEngineManager.StoreVariable("var3", "value3");
+
+        // Act
+        XsltEngineManager.ClearVariables();
+
+        // Assert
+        XsltEngineManager.Variables.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void EngineOutput_ShouldTriggerOnEmit()
+    {
+        // Arrange
+        string? capturedOutput = null;
+        XsltEngineManager.EngineOutput += (output) =>
+        {
+            capturedOutput = output;
+        };
+
+        // Act
+        XsltEngineManager.NotifyOutput("Test output message");
+
+        // Assert
+        capturedOutput.Should().Be("Test output message");
+    }
+
+    [Fact]
+    public void EngineTerminated_ShouldTriggerOnTerminate()
+    {
+        // Arrange
+        int? capturedExitCode = null;
+        XsltEngineManager.EngineTerminated += (exitCode) =>
+        {
+            capturedExitCode = exitCode;
+        };
+
+        // Act
+        XsltEngineManager.NotifyTerminated(42);
+
+        // Assert
+        capturedExitCode.Should().Be(42);
+    }
+
+    [Fact]
+    public void MultipleSubscribers_ShouldAllReceiveEvents()
+    {
+        // Arrange
+        var subscriber1Triggered = false;
+        var subscriber2Triggered = false;
+        var subscriber3Triggered = false;
+
+        XsltEngineManager.EngineStopped += (_, _, _) => subscriber1Triggered = true;
+        XsltEngineManager.EngineStopped += (_, _, _) => subscriber2Triggered = true;
+        XsltEngineManager.EngineStopped += (_, _, _) => subscriber3Triggered = true;
+
+        // Act
+        XsltEngineManager.NotifyStopped("/test/file.xslt", 10, DebugStopReason.Breakpoint, null);
+
+        // Assert
+        subscriber1Triggered.Should().BeTrue();
+        subscriber2Triggered.Should().BeTrue();
+        subscriber3Triggered.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(DebugStopReason.Breakpoint)]
+    [InlineData(DebugStopReason.Step)]
+    [InlineData(DebugStopReason.Entry)]
+    public void NotifyStopped_ShouldHandleDifferentStopReasons(DebugStopReason reason)
+    {
+        // Arrange
+        DebugStopReason? capturedReason = null;
+        XsltEngineManager.EngineStopped += (_, _, r) => capturedReason = r;
+
+        // Act
+        XsltEngineManager.NotifyStopped("/test/file.xslt", 10, reason);
+
+        // Assert
+        capturedReason.Should().Be(reason);
+    }
+
+    [Fact]
+    public void StoreVariable_WithComplexObject_ShouldStoreCorrectly()
+    {
+        // Arrange
+        var complexObject = new { Name = "Test", Value = 42, Items = new[] { 1, 2, 3 } };
+
+        // Act
+        XsltEngineManager.StoreVariable("complexVar", complexObject);
+
+        // Assert
+        XsltEngineManager.Variables["complexVar"].Should().Be(complexObject);
+    }
+
+    [Fact]
+    public void Variables_ShouldBeThreadSafe()
+    {
+        // This test ensures the Variables dictionary can be safely accessed
+        // In a real scenario, you might want more sophisticated threading tests
+
+        // Arrange & Act
+        var tasks = new List<System.Threading.Tasks.Task>();
+        for (int i = 0; i < 10; i++)
+        {
+            int index = i;
+            tasks.Add(System.Threading.Tasks.Task.Run(() =>
+            {
+                XsltEngineManager.StoreVariable($"var{index}", $"value{index}");
+            }));
+        }
+
+        System.Threading.Tasks.Task.WaitAll(tasks.ToArray());
+
+        // Assert
+        XsltEngineManager.Variables.Should().HaveCount(10);
+    }
+}

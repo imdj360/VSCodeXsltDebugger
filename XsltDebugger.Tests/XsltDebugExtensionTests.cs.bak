@@ -1,0 +1,328 @@
+using System;
+using System.IO;
+using System.Xml;
+using System.Xml.XPath;
+using FluentAssertions;
+using Xunit;
+using XsltDebugger.DebugAdapter;
+
+namespace XsltDebugger.Tests;
+
+/// <summary>
+/// Tests for XsltDebugExtension to ensure breakpoint hooks work correctly
+/// </summary>
+public class XsltDebugExtensionTests : IDisposable
+{
+    public XsltDebugExtensionTests()
+    {
+        // Reset state before each test
+        XsltEngineManager.SetDebugFlags(false, LogLevel.None);
+        XsltEngineManager.ClearVariables();
+    }
+
+    public void Dispose()
+    {
+        // Clean up after each test
+        XsltEngineManager.SetDebugFlags(false, LogLevel.None);
+        XsltEngineManager.ClearVariables();
+    }
+
+    [Fact]
+    public void GetXPathToNode_ShouldGenerateValidXPath_ForRootElement()
+    {
+        // Arrange
+        var xml = "<root><child>test</child></root>";
+        var doc = new XPathDocument(new StringReader(xml));
+        var navigator = doc.CreateNavigator();
+        navigator.MoveToRoot();
+        navigator.MoveToFirstChild(); // Move to <root>
+
+        // Act
+        var xpath = XsltDebugExtension.GetXPathToNode(navigator);
+
+        // Assert
+        xpath.Should().NotBeNullOrEmpty();
+        xpath.Should().Contain("root");
+    }
+
+    [Fact]
+    public void GetXPathToNode_ShouldHandleNestedElements()
+    {
+        // Arrange
+        var xml = "<root><parent><child>test</child></parent></root>";
+        var doc = new XPathDocument(new StringReader(xml));
+        var navigator = doc.CreateNavigator();
+        navigator.MoveToRoot();
+        navigator.MoveToFirstChild(); // root
+        navigator.MoveToFirstChild(); // parent
+        navigator.MoveToFirstChild(); // child
+
+        // Act
+        var xpath = XsltDebugExtension.GetXPathToNode(navigator);
+
+        // Assert
+        xpath.Should().NotBeNullOrEmpty();
+        xpath.Should().Contain("child");
+    }
+
+    [Fact]
+    public void GetXPathToNode_WithNullNavigator_ShouldReturnEmpty()
+    {
+        // Act
+        var xpath = XsltDebugExtension.GetXPathToNode(null);
+
+        // Assert
+        xpath.Should().Be(string.Empty);
+    }
+
+    [Fact]
+    public void Break_WithDebugDisabled_ShouldNotTriggerStop()
+    {
+        // Arrange
+        XsltEngineManager.SetDebugFlags(false, LogLevel.None);
+        bool eventTriggered = false;
+        XsltEngineManager.EngineStopped += (_, _, _) => eventTriggered = true;
+
+        var xml = "<root/>";
+        var doc = new XPathDocument(new StringReader(xml));
+        var navigator = doc.CreateNavigator();
+
+        // Act
+        XsltDebugExtension.Break("/test/file.xslt", 10, navigator, null);
+
+        // Assert
+        eventTriggered.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Break_WithDebugEnabled_ShouldTriggerStop()
+    {
+        // Arrange
+        XsltEngineManager.SetDebugFlags(true, LogLevel.Log);
+        string? capturedFile = null;
+        int? capturedLine = null;
+
+        XsltEngineManager.EngineStopped += (file, line, reason) =>
+        {
+            capturedFile = file;
+            capturedLine = line;
+        };
+
+        var xml = "<root/>";
+        var doc = new XPathDocument(new StringReader(xml));
+        var navigator = doc.CreateNavigator();
+
+        // Act
+        XsltDebugExtension.Break("/test/file.xslt", 42, navigator, null);
+
+        // Assert
+        capturedFile.Should().Be("/test/file.xslt");
+        capturedLine.Should().Be(42);
+    }
+
+    [Fact]
+    public void Break_ShouldUpdateContext()
+    {
+        // Arrange
+        XsltEngineManager.SetDebugFlags(true, LogLevel.Log);
+        XsltEngineManager.EngineStopped += (_, _, _) => { }; // Handler required
+
+        var xml = "<root><child>test</child></root>";
+        var doc = new XPathDocument(new StringReader(xml));
+        var navigator = doc.CreateNavigator();
+        navigator.MoveToRoot();
+        navigator.MoveToFirstChild();
+
+        // Act
+        XsltDebugExtension.Break("/test/file.xslt", 10, navigator, null);
+
+        // Assert
+        XsltEngineManager.LastContext.Should().NotBeNull();
+        XsltEngineManager.LastContext!.Name.Should().Be("root");
+    }
+
+    [Fact]
+    public void Break_WithVariableName_ShouldStoreVariable()
+    {
+        // Arrange
+        XsltEngineManager.SetDebugFlags(true, LogLevel.Log);
+        XsltEngineManager.EngineStopped += (_, _, _) => { };
+
+        var xml = "<root/>";
+        var doc = new XPathDocument(new StringReader(xml));
+        var navigator = doc.CreateNavigator();
+
+        // Act
+        XsltDebugExtension.Break("/test/file.xslt", 10, navigator, "testVariable", "testValue");
+
+        // Assert
+        XsltEngineManager.Variables.Should().ContainKey("testVariable");
+        XsltEngineManager.Variables["testVariable"].Should().Be("testValue");
+    }
+
+    [Fact]
+    public void Break_WithMultipleVariables_ShouldStoreAll()
+    {
+        // Arrange
+        XsltEngineManager.SetDebugFlags(true, LogLevel.Log);
+        XsltEngineManager.ClearVariables();
+        XsltEngineManager.EngineStopped += (_, _, _) => { };
+
+        var xml = "<root/>";
+        var doc = new XPathDocument(new StringReader(xml));
+        var navigator = doc.CreateNavigator();
+
+        // Act
+        XsltDebugExtension.Break("/test/file.xslt", 10, navigator, "var1", "value1");
+        XsltDebugExtension.Break("/test/file.xslt", 11, navigator, "var2", "value2");
+        XsltDebugExtension.Break("/test/file.xslt", 12, navigator, "var3", "value3");
+
+        // Assert
+        XsltEngineManager.Variables.Should().HaveCount(3);
+        XsltEngineManager.Variables["var1"].Should().Be("value1");
+        XsltEngineManager.Variables["var2"].Should().Be("value2");
+        XsltEngineManager.Variables["var3"].Should().Be("value3");
+    }
+
+    [Fact]
+    public void Break_ShouldHandleComplexXml()
+    {
+        // Arrange
+        XsltEngineManager.SetDebugFlags(true, LogLevel.Log);
+        XsltEngineManager.EngineStopped += (_, _, _) => { };
+
+        var xml = @"<?xml version=""1.0""?>
+<catalog>
+    <book id=""bk101"">
+        <author>Gambardella, Matthew</author>
+        <title>XML Developer's Guide</title>
+        <genre>Computer</genre>
+        <price>44.95</price>
+    </book>
+</catalog>";
+
+        var doc = new XPathDocument(new StringReader(xml));
+        var navigator = doc.CreateNavigator();
+        navigator.MoveToRoot();
+        navigator.MoveToFirstChild(); // catalog
+
+        // Act
+        XsltDebugExtension.Break("/test/file.xslt", 20, navigator, null);
+
+        // Assert
+        XsltEngineManager.LastContext.Should().NotBeNull();
+        XsltEngineManager.LastContext!.Name.Should().Be("catalog");
+    }
+
+    [Fact]
+    public void Break_WithAttributes_ShouldAccessAttributes()
+    {
+        // Arrange
+        XsltEngineManager.SetDebugFlags(true, LogLevel.Log);
+        XsltEngineManager.EngineStopped += (_, _, _) => { };
+
+        var xml = @"<root attr1=""value1"" attr2=""value2""><child/></root>";
+        var doc = new XPathDocument(new StringReader(xml));
+        var navigator = doc.CreateNavigator();
+        navigator.MoveToRoot();
+        navigator.MoveToFirstChild(); // root element
+
+        // Act
+        XsltDebugExtension.Break("/test/file.xslt", 15, navigator, null);
+
+        // Assert
+        XsltEngineManager.LastContext.Should().NotBeNull();
+        XsltEngineManager.LastContext!.HasAttributes.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("/test/file.xslt", 1)]
+    [InlineData("/another/path/style.xslt", 100)]
+    [InlineData("C:\\Users\\test\\file.xslt", 42)]
+    public void Break_ShouldHandleDifferentFilePathFormats(string filePath, int line)
+    {
+        // Arrange
+        XsltEngineManager.SetDebugFlags(true, LogLevel.Log);
+        string? capturedFile = null;
+        int? capturedLine = null;
+
+        XsltEngineManager.EngineStopped += (file, l, _) =>
+        {
+            capturedFile = file;
+            capturedLine = l;
+        };
+
+        var xml = "<root/>";
+        var doc = new XPathDocument(new StringReader(xml));
+        var navigator = doc.CreateNavigator();
+
+        // Act
+        XsltDebugExtension.Break(filePath, line, navigator, null);
+
+        // Assert
+        capturedFile.Should().Be(filePath);
+        capturedLine.Should().Be(line);
+    }
+
+    [Fact]
+    public void Break_ShouldUpdateLastStopLocation()
+    {
+        // Arrange
+        XsltEngineManager.SetDebugFlags(true, LogLevel.Log);
+        XsltEngineManager.EngineStopped += (_, _, _) => { };
+
+        var xml = "<root/>";
+        var doc = new XPathDocument(new StringReader(xml));
+        var navigator = doc.CreateNavigator();
+
+        // Act
+        XsltDebugExtension.Break("/test/file.xslt", 99, navigator, null);
+
+        // Assert
+        XsltEngineManager.LastStop.Should().NotBeNull();
+        XsltEngineManager.LastStop!.Value.file.Should().Be("/test/file.xslt");
+        XsltEngineManager.LastStop!.Value.line.Should().Be(99);
+    }
+
+    [Fact]
+    public void ExtractNavigator_ShouldHandleXPathNavigator()
+    {
+        // Arrange
+        var xml = "<root/>";
+        var doc = new XPathDocument(new StringReader(xml));
+        var navigator = doc.CreateNavigator();
+
+        // Act
+        var extracted = XsltDebugExtension.ExtractNavigator(navigator);
+
+        // Assert
+        extracted.Should().NotBeNull();
+        extracted.Should().Be(navigator);
+    }
+
+    [Fact]
+    public void ExtractNavigator_WithNull_ShouldReturnNull()
+    {
+        // Act
+        var extracted = XsltDebugExtension.ExtractNavigator(null);
+
+        // Assert
+        extracted.Should().BeNull();
+    }
+
+    [Fact]
+    public void Break_WithNullContext_ShouldNotCrash()
+    {
+        // Arrange
+        XsltEngineManager.SetDebugFlags(true, LogLevel.Log);
+        bool eventTriggered = false;
+        XsltEngineManager.EngineStopped += (_, _, _) => eventTriggered = true;
+
+        // Act - Should not throw
+        Action act = () => XsltDebugExtension.Break("/test/file.xslt", 10, null, null);
+
+        // Assert
+        act.Should().NotThrow();
+        eventTriggered.Should().BeTrue();
+    }
+}

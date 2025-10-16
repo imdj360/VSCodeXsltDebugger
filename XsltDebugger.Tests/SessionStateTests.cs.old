@@ -1,0 +1,219 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using FluentAssertions;
+using Xunit;
+using XsltDebugger.DebugAdapter;
+
+namespace XsltDebugger.Tests;
+
+/// <summary>
+/// Tests for SessionState to ensure breakpoint management and path normalization work correctly
+/// </summary>
+public class SessionStateTests
+{
+    [Fact]
+    public void SetEngine_ShouldInitializeEngine()
+    {
+        // Arrange
+        var state = new SessionState();
+        var engine = new MockXsltEngine();
+
+        // Act
+        state.SetEngine(engine);
+
+        // Assert
+        state.Engine.Should().Be(engine);
+    }
+
+    [Fact]
+    public void SetBreakpoints_ShouldStoreBreakpointsForFile()
+    {
+        // Arrange
+        var state = new SessionState();
+        var filePath = "/Users/test/file.xslt";
+        var breakpoints = new[] { 10, 20, 30 };
+
+        // Act
+        state.SetBreakpoints(filePath, breakpoints);
+
+        // Assert
+        var stored = state.GetBreakpointsFor(filePath);
+        stored.Should().BeEquivalentTo(breakpoints);
+    }
+
+    [Fact]
+    public void SetBreakpoints_ShouldReplaceExistingBreakpoints()
+    {
+        // Arrange
+        var state = new SessionState();
+        var filePath = "/Users/test/file.xslt";
+
+        // Act
+        state.SetBreakpoints(filePath, new[] { 10, 20 });
+        state.SetBreakpoints(filePath, new[] { 30, 40 });
+
+        // Assert
+        var stored = state.GetBreakpointsFor(filePath);
+        stored.Should().BeEquivalentTo(new[] { 30, 40 });
+        stored.Should().NotContain(10);
+        stored.Should().NotContain(20);
+    }
+
+    [Fact]
+    public void GetBreakpointsFor_NonExistentFile_ShouldReturnEmptyList()
+    {
+        // Arrange
+        var state = new SessionState();
+
+        // Act
+        var result = state.GetBreakpointsFor("/nonexistent/file.xslt");
+
+        // Assert
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void GetAllBreakpoints_ShouldReturnAllBreakpointsFromAllFiles()
+    {
+        // Arrange
+        var state = new SessionState();
+        state.SetBreakpoints("/file1.xslt", new[] { 10, 20 });
+        state.SetBreakpoints("/file2.xslt", new[] { 30, 40 });
+
+        // Act
+        var allBreakpoints = state.GetAllBreakpoints();
+
+        // Assert
+        allBreakpoints.Should().HaveCount(2);
+        allBreakpoints.Should().ContainKey("/file1.xslt");
+        allBreakpoints.Should().ContainKey("/file2.xslt");
+        allBreakpoints["/file1.xslt"].Should().BeEquivalentTo(new[] { 10, 20 });
+        allBreakpoints["/file2.xslt"].Should().BeEquivalentTo(new[] { 30, 40 });
+    }
+
+    [Fact]
+    public void SetBreakpoints_ShouldHandleDuplicateLineNumbers()
+    {
+        // Arrange
+        var state = new SessionState();
+        var filePath = "/Users/test/file.xslt";
+
+        // Act
+        state.SetBreakpoints(filePath, new[] { 10, 10, 20, 20, 30 });
+
+        // Assert
+        var stored = state.GetBreakpointsFor(filePath);
+        stored.Should().BeEquivalentTo(new[] { 10, 20, 30 });
+    }
+
+    [Fact]
+    public void SetBreakpoints_WithEmptyArray_ShouldClearBreakpoints()
+    {
+        // Arrange
+        var state = new SessionState();
+        var filePath = "/Users/test/file.xslt";
+        state.SetBreakpoints(filePath, new[] { 10, 20, 30 });
+
+        // Act
+        state.SetBreakpoints(filePath, Array.Empty<int>());
+
+        // Assert
+        var stored = state.GetBreakpointsFor(filePath);
+        stored.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void SetBreakpoints_ShouldHandleMultipleFiles()
+    {
+        // Arrange
+        var state = new SessionState();
+
+        // Act
+        state.SetBreakpoints("/file1.xslt", new[] { 10 });
+        state.SetBreakpoints("/file2.xslt", new[] { 20 });
+        state.SetBreakpoints("/file3.xslt", new[] { 30 });
+
+        // Assert
+        state.GetBreakpointsFor("/file1.xslt").Should().BeEquivalentTo(new[] { 10 });
+        state.GetBreakpointsFor("/file2.xslt").Should().BeEquivalentTo(new[] { 20 });
+        state.GetBreakpointsFor("/file3.xslt").Should().BeEquivalentTo(new[] { 30 });
+    }
+
+    [Theory]
+    [InlineData("C:\\Users\\test\\file.xslt")]
+    [InlineData("/Users/test/file.xslt")]
+    [InlineData("/home/user/project/file.xslt")]
+    public void SetBreakpoints_ShouldHandleDifferentPathFormats(string path)
+    {
+        // Arrange
+        var state = new SessionState();
+
+        // Act
+        state.SetBreakpoints(path, new[] { 10 });
+
+        // Assert
+        var stored = state.GetBreakpointsFor(path);
+        stored.Should().Contain(10);
+    }
+
+    [Fact]
+    public void SetEngine_WithExistingBreakpoints_ShouldApplyBreakpointsToEngine()
+    {
+        // Arrange
+        var state = new SessionState();
+        var engine = new MockXsltEngine();
+        state.SetBreakpoints("/file1.xslt", new[] { 10, 20 });
+        state.SetBreakpoints("/file2.xslt", new[] { 30 });
+
+        // Act
+        state.SetEngine(engine);
+
+        // Assert
+        engine.BreakpointsSet.Should().HaveCount(3);
+        engine.BreakpointsSet.Should().Contain(("/file1.xslt", 10));
+        engine.BreakpointsSet.Should().Contain(("/file1.xslt", 20));
+        engine.BreakpointsSet.Should().Contain(("/file2.xslt", 30));
+    }
+
+    // Mock implementation for testing
+    private class MockXsltEngine : IXsltEngine
+    {
+        public List<(string file, int line)> BreakpointsSet { get; } = new();
+
+        public Task StartAsync(string stylesheetPath, string xmlPath, bool stopOnEntry)
+        {
+            return Task.CompletedTask;
+        }
+
+        public void SetBreakpoints(IEnumerable<(string file, int line)> breakpoints)
+        {
+            BreakpointsSet.AddRange(breakpoints);
+        }
+
+        public Task ContinueAsync()
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task StepOverAsync()
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task StepInAsync()
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task StepOutAsync()
+        {
+            return Task.CompletedTask;
+        }
+
+        public void Terminate()
+        {
+        }
+    }
+}
