@@ -123,6 +123,7 @@ public class SaxonEngine : IXsltEngine
 
                     EnsureDebugNamespace(xdoc);
                     InstrumentStylesheet(xdoc);
+                    InstrumentVariables(xdoc);
                     if (XsltEngineManager.IsLogEnabled)
                     {
                         XsltEngineManager.NotifyOutput("Debugging enabled for XSLT 2.0/3.0.");
@@ -157,6 +158,7 @@ public class SaxonEngine : IXsltEngine
                         }
                         var executable = compiler.Compile(stylesheetDoc);
                         _transformer = executable.Load();
+                        _transformer.MessageListener2 = new SaxonMessageListener();
                         if (XsltEngineManager.IsTraceEnabled)
                         {
                             XsltEngineManager.NotifyOutput("[trace] Saxon.Start: transformer loaded");
@@ -641,6 +643,155 @@ public class SaxonEngine : IXsltEngine
                 element.AddBeforeSelf(breakCall);
             }
         }
+    }
+
+    private void InstrumentVariables(XDocument doc)
+    {
+        if (doc.Root == null)
+        {
+            return;
+        }
+
+        var xsltNamespace = doc.Root.Name.Namespace;
+
+        // Find all xsl:variable and xsl:param elements
+        var variables = doc
+            .Descendants()
+            .Where(e => e.Name.Namespace == xsltNamespace &&
+                       (e.Name.LocalName == "variable" || e.Name.LocalName == "param"))
+            .Where(e => e.Attribute("name") != null)
+            .Where(e => !IsTopLevelDeclaration(e, xsltNamespace))
+            .ToList();
+
+        if (XsltEngineManager.IsLogEnabled)
+        {
+            XsltEngineManager.NotifyOutput($"[debug] Instrumenting {variables.Count} variable(s) for debugging");
+        }
+
+        foreach (var variable in variables)
+        {
+            var varName = variable.Attribute("name")?.Value;
+            if (string.IsNullOrEmpty(varName))
+            {
+                continue;
+            }
+
+            // GUARDRAILS: Check if it's safe to insert xsl:message after this variable
+            if (!IsSafeToInstrumentVariable(variable, xsltNamespace))
+            {
+                if (XsltEngineManager.IsLogEnabled)
+                {
+                    XsltEngineManager.NotifyOutput($"[debug]   Skipped unsafe instrumentation: ${varName}");
+                }
+                continue;
+            }
+
+            // Create debug message: <xsl:message select="('[DBG]', 'varName', string-join(for $x in $varName return string($x), ', '))"/>
+            // This handles both single values and sequences
+            var debugMessage = new XElement(
+                xsltNamespace + "message",
+                new XAttribute("select", $"('[DBG]', '{varName}', string-join(for $x in ${varName} return string($x), ', '))")
+            );
+
+            // Insert the message right after the variable declaration
+            variable.AddAfterSelf(debugMessage);
+
+            if (XsltEngineManager.IsLogEnabled)
+            {
+                XsltEngineManager.NotifyOutput($"[debug]   Instrumented variable: ${varName}");
+            }
+        }
+    }
+
+    private static bool IsSafeToInstrumentVariable(XElement variable, XNamespace xsltNamespace)
+    {
+        var parent = variable.Parent;
+        if (parent == null)
+        {
+            return false;
+        }
+
+        var parentLocalName = parent.Name.LocalName;
+        var parentIsXslt = parent.Name.Namespace == xsltNamespace;
+
+        // Cannot insert xsl:message in these contexts:
+        if (parentIsXslt)
+        {
+            switch (parentLocalName)
+            {
+                // Cannot add instructions inside these elements
+                case "attribute":
+                case "comment":
+                case "processing-instruction":
+                case "namespace":
+                case "output":
+                case "key":
+                case "decimal-format":
+                case "character-map":
+                    return false;
+
+                // Cannot add message inside xsl:function body if variable has content
+                // But if variable has @select, it's safe to add message after it
+                case "function":
+                    // If variable has select attribute, it's a single element - safe to add after
+                    // If variable has content, adding after might be inside the function result
+                    return variable.Attribute("select") != null || !variable.HasElements;
+
+                // In xsl:variable or xsl:param content - not safe
+                case "variable":
+                case "param":
+                case "with-param":
+                    return false;
+            }
+        }
+
+        // Check if we're inside an attribute value template context
+        // Variables inside xsl:attribute content need special handling
+        var attributeAncestor = variable.Ancestors()
+            .FirstOrDefault(a => a.Name.Namespace == xsltNamespace &&
+                                a.Name.LocalName == "attribute");
+        if (attributeAncestor != null)
+        {
+            return false;
+        }
+
+        // Check if variable is in xsl:sequence - adding message after might break sequence
+        if (parentIsXslt && parentLocalName == "sequence")
+        {
+            return false;
+        }
+
+        // Variables inside xsl:analyze-string have strict content model
+        if (variable.Ancestors().Any(a => a.Name.Namespace == xsltNamespace &&
+                                         a.Name.LocalName == "analyze-string"))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool IsTopLevelDeclaration(XElement element, XNamespace xsltNamespace)
+    {
+        // Check if this is a top-level variable/param (direct child of stylesheet/transform)
+        var parent = element.Parent;
+        if (parent != null && parent.Name.Namespace == xsltNamespace)
+        {
+            var parentLocal = parent.Name.LocalName;
+            if (parentLocal == "stylesheet" || parentLocal == "transform")
+            {
+                return true;
+            }
+        }
+
+        // Don't skip variables inside functions - we want to debug them too!
+        // if (element.Ancestors().Any(a => a.Name.Namespace == xsltNamespace &&
+        //                                  a.Name.LocalName == "function"))
+        // {
+        //     return true;
+        // }
+
+        return false;
     }
 
     private static bool ShouldInstrument(XElement element, XNamespace xsltNamespace)

@@ -31,9 +31,16 @@ class ProgramUsingSaxonEngine
             Console.WriteLine("1. Initializing SaxonEngine from DebugAdapter...");
             var engine = new SaxonEngine();
 
-            // Enable full tracing
-            XsltEngineManager.SetDebugFlags(debug: true, LogLevel.TraceAll);
-            Console.WriteLine("   >> Tracing ENABLED (TraceAll level)\n");
+            // Enable debugging with log level
+            XsltEngineManager.SetDebugFlags(debug: true, LogLevel.Log);
+            Console.WriteLine("   >> Debugging ENABLED (Log)\n");
+
+            // Set breakpoint - detect which file and set appropriate line
+            var fullStylesheetPath = Path.GetFullPath(stylesheetPath);
+            int breakpointLine = stylesheetPath.Contains("message-test") ? 9 :
+                                 stylesheetPath.Contains("ShipmentConf3") ? 55 : 26;
+            engine.SetBreakpoints(new[] { (fullStylesheetPath, breakpointLine) });
+            Console.WriteLine($"   >> Breakpoint set at line {breakpointLine}\n");
 
             // Set up event handlers to capture output
             XsltEngineManager.EngineOutput += (output) =>
@@ -44,6 +51,50 @@ class ProgramUsingSaxonEngine
             XsltEngineManager.EngineStopped += (file, line, reason) =>
             {
                 Console.WriteLine($"[STOPPED] {reason} at {file}:{line}");
+
+                // Display context information
+                var context = XsltEngineManager.LastContext;
+                if (context != null)
+                {
+                    Console.WriteLine("\n  === CONTEXT VARIABLES ===");
+                    Console.WriteLine($"  name: {context.Name}");
+                    Console.WriteLine($"  localName: {context.LocalName}");
+                    Console.WriteLine($"  nodeType: {context.NodeType}");
+                    Console.WriteLine($"  value: {(context.Value?.Length > 100 ? context.Value.Substring(0, 100) + "..." : context.Value ?? "")}");
+
+                    if (context.HasAttributes)
+                    {
+                        Console.WriteLine("  attributes:");
+                        var attrNav = context.Clone();
+                        if (attrNav.MoveToFirstAttribute())
+                        {
+                            do
+                            {
+                                Console.WriteLine($"    @{attrNav.Name} = \"{attrNav.Value}\"");
+                            } while (attrNav.MoveToNextAttribute());
+                        }
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("\n  === CONTEXT VARIABLES ===");
+                    Console.WriteLine("  (no context available)");
+                }
+
+                // Display XSLT variables
+                Console.WriteLine("\n  === XSLT VARIABLES ===");
+                if (XsltEngineManager.Variables.Count > 0)
+                {
+                    foreach (var kvp in XsltEngineManager.Variables)
+                    {
+                        Console.WriteLine($"  ${kvp.Key} = {kvp.Value}");
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("  (no XSLT variables captured)");
+                }
+                Console.WriteLine();
 
                 // Auto-continue for console test (in real debugger, this would wait for user input)
                 Task.Run(async () =>
