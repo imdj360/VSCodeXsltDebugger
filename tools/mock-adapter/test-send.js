@@ -14,7 +14,7 @@ adapter.stdout.on('data', d => process.stdout.write('[adapter stdout] ' + d.toSt
 adapter.stderr.on('data', d => process.stderr.write('[adapter stderr] ' + d.toString()));
 
 const init = { seq: 1, type: 'request', command: 'initialize', arguments: { clientID: 'test', adapterID: 'xslt' } };
-const setBp = { seq: 2, type: 'request', command: 'setBreakpoints', arguments: { source: { path: 'file:///Users/danieljonathan/Workspace/LearnDJ/XsltDebugger/sample/sample-inline-cs.xslt' }, breakpoints: [ { line: 23 } ] } };
+const setBp = { seq: 2, type: 'request', command: 'setBreakpoints', arguments: { source: { path: 'file:///Users/danieljonathan/Workspace/LearnDJ/XsltDebugger/XsltDebugger.ConsoleTest/sample/sample-inline-cs.xslt' }, breakpoints: [ { line: 23 } ] } };
 const confDone = { seq: 3, type: 'request', command: 'configurationDone' };
 const launch = { seq: 4, type: 'request', command: 'launch', arguments: { } };
 

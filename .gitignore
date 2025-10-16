@@ -12,6 +12,7 @@ obj/
 *.cache
 *.log
 *.tmp
+*.out.xml
 
 # OS generated files
 .DS_Store

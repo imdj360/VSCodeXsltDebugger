@@ -197,11 +197,18 @@ internal static class Program
         var dir = new DirectoryInfo(Environment.CurrentDirectory);
         for (var i = 0; i < 6 && dir != null; i++)
         {
-            var candidate = Path.Combine(dir.FullName, "sample", relative);
-            if (File.Exists(candidate))
+            var legacy = Path.Combine(dir.FullName, "sample", relative);
+            if (File.Exists(legacy))
             {
-                return candidate;
+                return legacy;
             }
+
+            var consoleTestSample = Path.Combine(dir.FullName, "XsltDebugger.ConsoleTest", "sample", relative);
+            if (File.Exists(consoleTestSample))
+            {
+                return consoleTestSample;
+            }
+
             dir = dir.Parent;
         }
         return Path.GetFullPath(relative);

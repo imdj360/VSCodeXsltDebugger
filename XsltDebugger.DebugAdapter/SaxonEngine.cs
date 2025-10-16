@@ -621,6 +621,19 @@ public class SaxonEngine : IXsltEngine
                 xsltNamespace + "value-of",
                 new XAttribute("select", $"dbg:break({line!.Value}, .)"));
 
+            XElement? forEachMessage = null;
+            if (isXsltElement && string.Equals(element.Name.LocalName, "for-each", StringComparison.OrdinalIgnoreCase))
+            {
+                var linePrefix = line.HasValue ? $"line={line.Value} " : string.Empty;
+                var selectAttr = element.Attribute("select")?.Value ?? string.Empty;
+                var safeSelect = string.IsNullOrWhiteSpace(selectAttr) ? "(none)" : EscapeApostrophes(selectAttr.Trim());
+                var messageSelect =
+                    $"('[DBG]', 'for-each', concat('{linePrefix}select={safeSelect} ', 'pos=', string(position())))";
+                forEachMessage = new XElement(
+                    xsltNamespace + "message",
+                    new XAttribute("select", messageSelect));
+            }
+
             var parent = element.Parent;
             var parentIsXslt = parent?.Name.Namespace == xsltNamespace;
 
@@ -636,11 +649,35 @@ public class SaxonEngine : IXsltEngine
 
             if (CanInsertAsFirstChild(element, isXsltElement))
             {
-                element.AddFirst(breakCall);
+                if (forEachMessage != null)
+                {
+                    element.AddFirst(forEachMessage);
+                    forEachMessage.AddAfterSelf(breakCall);
+                    if (XsltEngineManager.IsLogEnabled && line.HasValue)
+                    {
+                        XsltEngineManager.NotifyOutput($"[debug]   Instrumented for-each loop with position tracking at line {line.Value}");
+                    }
+                }
+                else
+                {
+                    element.AddFirst(breakCall);
+                }
             }
             else
             {
-                element.AddBeforeSelf(breakCall);
+                if (forEachMessage != null)
+                {
+                    element.AddBeforeSelf(forEachMessage);
+                    forEachMessage.AddAfterSelf(breakCall);
+                    if (XsltEngineManager.IsLogEnabled && line.HasValue)
+                    {
+                        XsltEngineManager.NotifyOutput($"[debug]   Instrumented for-each loop with position tracking at line {line.Value}");
+                    }
+                }
+                else
+                {
+                    element.AddBeforeSelf(breakCall);
+                }
             }
         }
     }
@@ -898,6 +935,11 @@ public class SaxonEngine : IXsltEngine
         }
 
         return true;
+    }
+
+    private static string EscapeApostrophes(string value)
+    {
+        return value.Replace("'", "''");
     }
 
     internal static bool IsXsltStylesheet(XElement root)

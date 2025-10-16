@@ -106,7 +106,7 @@
             "name": "XSLT: Launch",
             "request": "launch",
             "stylesheet": "${file}",
-            "xml": "${workspaceFolder}/sample/sample.xml",
+            "xml": "${workspaceFolder}/XsltDebugger.ConsoleTest/sample/sample.xml",
             "engine": "compiled",
             "stopOnEntry": false
           }

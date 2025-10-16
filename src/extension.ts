@@ -14,7 +14,7 @@ class XsltDebugConfigurationProvider implements vscode.DebugConfigurationProvide
 				request: 'launch',
 				engine: 'compiled',
 				stylesheet: '${file}',
-				xml: `${baseFolder}/sample/sample.xml`,
+				xml: `${baseFolder}/XsltDebugger.ConsoleTest/sample/sample.xml`,
 				stopOnEntry: false
 			}
 		];

@@ -7,12 +7,16 @@ namespace XsltDebugger.ConsoleTest;
 
 class ProgramUsingSaxonEngine
 {
+    private const string ConsoleTestFolder = "XsltDebugger.ConsoleTest";
+    private const string SampleFolderName = "sample";
+    private static readonly string DefaultSampleFolder = Path.Combine(ConsoleTestFolder, SampleFolderName);
+
     static async Task Main(string[] args)
     {
         Console.WriteLine("=== XSLT Debugger Console Test (Using SaxonEngine) ===\n");
 
-        var stylesheetPath = args.Length > 0 ? args[0] : "ShipmentConf3.xslt";
-        var xmlPath = args.Length > 1 ? args[1] : "ShipmentConf.xml";
+        var stylesheetPath = ResolveInput(args, 0, Path.Combine(DefaultSampleFolder, "ShipmentConf3.xslt"));
+        var xmlPath = ResolveInput(args, 1, Path.Combine(DefaultSampleFolder, "ShipmentConf.xml"));
 
         if (!File.Exists(stylesheetPath))
         {
@@ -132,5 +136,95 @@ class ProgramUsingSaxonEngine
             Console.WriteLine($"{ex.GetType().Name}: {ex.Message}");
             Console.WriteLine($"\nStack trace:\n{ex.StackTrace}");
         }
+    }
+
+    private static string ResolveInput(string[] args, int index, string fallback)
+    {
+        var candidate = index < args.Length ? args[index] : null;
+        if (!string.IsNullOrWhiteSpace(candidate))
+        {
+            var resolved = TryResolve(candidate!);
+            if (resolved != null)
+            {
+                return resolved;
+            }
+            return candidate!;
+        }
+
+        var fallbackResolved = TryResolve(fallback);
+        return fallbackResolved ?? fallback;
+    }
+
+    private static string? TryResolve(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        if (Path.IsPathRooted(path) && File.Exists(path))
+        {
+            return path;
+        }
+
+        if (File.Exists(path))
+        {
+            return Path.GetFullPath(path);
+        }
+
+        var dir = new DirectoryInfo(Environment.CurrentDirectory);
+        for (var i = 0; i < 8 && dir != null; i++)
+        {
+            var direct = Path.Combine(dir.FullName, path);
+            if (File.Exists(direct))
+            {
+                return direct;
+            }
+
+            if (!StartsWithSegment(path, ConsoleTestFolder))
+            {
+                var consolePath = Path.Combine(dir.FullName, ConsoleTestFolder, path);
+                if (File.Exists(consolePath))
+                {
+                    return consolePath;
+                }
+            }
+
+            if (!StartsWithSegment(path, SampleFolderName) &&
+                !path.Contains($"{ConsoleTestFolder}{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase) &&
+                !path.Contains($"{ConsoleTestFolder}/", StringComparison.OrdinalIgnoreCase))
+            {
+                var samplePath = Path.Combine(dir.FullName, ConsoleTestFolder, SampleFolderName, path);
+                if (File.Exists(samplePath))
+                {
+                    return samplePath;
+                }
+            }
+
+            dir = dir.Parent;
+        }
+
+        return null;
+    }
+
+    private static bool StartsWithSegment(string path, string segment)
+    {
+        if (string.IsNullOrEmpty(path))
+        {
+            return false;
+        }
+
+        if (path.StartsWith(segment + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (Path.DirectorySeparatorChar != '/' &&
+            path.StartsWith(segment + "/", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return path.Equals(segment, StringComparison.OrdinalIgnoreCase);
     }
 }
