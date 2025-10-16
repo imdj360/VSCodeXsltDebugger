@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Xml.XPath;
 
 namespace XsltDebugger.DebugAdapter;
@@ -13,6 +14,9 @@ public static class XsltEngineManager
 
     public static DebugStopReason LastStopReason { get; private set; } = DebugStopReason.Breakpoint;
     public static XPathNavigator? LastContext { get; private set; }
+
+    // XSLT Variables storage
+    public static Dictionary<string, object?> Variables { get; private set; } = new();
 
     public static bool DebugEnabled { get; private set; } = true;
     public static LogLevel CurrentLogLevel { get; private set; } = LogLevel.Log;
@@ -82,6 +86,32 @@ public static class XsltEngineManager
         EngineTerminated?.Invoke(exitCode);
     }
 
+    public static void StoreVariable(string name, object? value)
+    {
+        Variables[name] = value;
+        if (IsTraceAllEnabled)
+        {
+            NotifyOutput($"[traceall] Variable stored: ${name} = {FormatValue(value)}");
+        }
+    }
+
+    public static void ClearVariables()
+    {
+        Variables.Clear();
+        if (IsTraceAllEnabled)
+        {
+            NotifyOutput("[traceall] Variables cleared");
+        }
+    }
+
+    private static string FormatValue(object? value)
+    {
+        if (value == null) return "null";
+        if (value is XPathNodeIterator iter) return $"{iter.Count} nodes";
+        var str = value.ToString() ?? "null";
+        return str.Length > 100 ? str.Substring(0, 100) + "..." : str;
+    }
+
     public static void Reset()
     {
         LastStop = null;
@@ -89,6 +119,7 @@ public static class XsltEngineManager
         LastContext = null;
         DebugEnabled = true;
         CurrentLogLevel = LogLevel.Log;
+        ClearVariables();
     }
 }
 

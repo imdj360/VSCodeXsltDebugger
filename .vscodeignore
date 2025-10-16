@@ -107,3 +107,20 @@ sample/**
 tools/**
 changelog.md
 package-clean.sh
+
+# Test projects
+XsltDebugger.Tests/**
+
+# Distribution folder (manual packaging)
+dist/**
+
+# Documentation files
+ENHANCEMENT-PLAN.md
+INSTRUMENTATION-GUIDE.md
+VARIABLE-EVALUATION-FIX.md
+VARIABLE-LOGGING-PLAN.md
+VARIABLE-PRINT-GUIDE.md
+
+# Packaging scripts
+package-darwin.sh
+package-win.sh

@@ -18,7 +18,7 @@ public class XsltCompiledEngine : IXsltEngine
 {
     private const string DebugNamespace = "urn:xslt-debugger";
 
-    internal static readonly HashSet<string> InlineInstrumentationTargets = new(StringComparer.OrdinalIgnoreCase)
+    public static readonly HashSet<string> InlineInstrumentationTargets = new(StringComparer.OrdinalIgnoreCase)
     {
         "template",
         "if",
@@ -39,7 +39,7 @@ public class XsltCompiledEngine : IXsltEngine
         "catch"
     };
 
-    internal static readonly HashSet<string> ElementsDisallowingChildInstrumentation = new(StringComparer.OrdinalIgnoreCase)
+    public static readonly HashSet<string> ElementsDisallowingChildInstrumentation = new(StringComparer.OrdinalIgnoreCase)
     {
         "apply-templates",
         "call-template",
@@ -432,6 +432,12 @@ public class XsltCompiledEngine : IXsltEngine
             return false;
         }
 
+        // Exclude any elements inside xsl:message to avoid instrumentation conflicts
+        if (element.Ancestors().Any(a => a.Name.Namespace == xsltNamespace && a.Name.LocalName is "message"))
+        {
+            return false;
+        }
+
         if (element.Name.Namespace == xsltNamespace)
         {
             var localName = element.Name.LocalName;
@@ -440,6 +446,8 @@ public class XsltCompiledEngine : IXsltEngine
                 "stylesheet" or "transform" => false,
                 "attribute-set" or "decimal-format" or "import" or "include" or "key" or "namespace-alias" or "output" or "preserve-space" or "strip-space" => false,
                 "param" or "variable" or "with-param" => false,
+                // Exclude xsl:message to avoid instrumentation conflicts
+                "message" => false,
                 _ => true
             };
         }
@@ -595,7 +603,7 @@ public class XsltCompiledEngine : IXsltEngine
         return Activator.CreateInstance(chosen) ?? throw new Exception("Failed to instantiate compiled extension type.");
     }
 
-    internal static bool IsXsltStylesheet(XElement root)
+    public static bool IsXsltStylesheet(XElement root)
     {
         var ns = root.Name.NamespaceName;
         return ns == "http://www.w3.org/1999/XSL/Transform" && (root.Name.LocalName == "stylesheet" || root.Name.LocalName == "transform");

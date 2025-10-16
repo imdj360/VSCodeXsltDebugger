@@ -14,8 +14,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="../XsltDebugger.DebugAdapter/XsltDebugger.DebugAdapter.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Compile Remove="Program.cs" />
+    <Compile Remove="ProgramWithInstrumentation.cs" />
     <None Include="Program.cs" />
+    <None Include="ProgramWithInstrumentation.cs" />
   </ItemGroup>
 
 </Project>

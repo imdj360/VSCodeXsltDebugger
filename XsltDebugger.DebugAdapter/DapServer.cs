@@ -433,9 +433,13 @@ internal sealed class DapServer
             contextReference = RegisterVariables(() => BuildContextVariables(snapshot.Clone()));
         }
 
+        // Add XSLT Variables scope - always show it, even if empty
+        var xsltVariablesReference = RegisterVariables(() => BuildXsltVariables());
+
         var scopes = new[]
         {
-            new { name = "Context", variablesReference = contextReference, expensive = false }
+            new { name = "Context", variablesReference = contextReference, expensive = false },
+            new { name = "XSLT Variables", variablesReference = xsltVariablesReference, expensive = false }
         };
         SendResponse(requestSeq, "scopes", new { scopes });
     }
@@ -539,6 +543,21 @@ internal sealed class DapServer
                 value = descriptor.Value,
                 type = descriptor.Type,
                 variablesReference = childReference
+            });
+        }
+        return variables;
+    }
+
+    private List<VariableDescriptor> BuildXsltVariables()
+    {
+        var variables = new List<VariableDescriptor>();
+        foreach (var kvp in XsltEngineManager.Variables)
+        {
+            variables.Add(new VariableDescriptor
+            {
+                Name = $"${kvp.Key}",
+                Value = kvp.Value?.ToString() ?? "null",
+                Type = kvp.Value?.GetType().Name ?? "null"
             });
         }
         return variables;

@@ -188,7 +188,11 @@ Create a `.vscode/launch.json` file in your project workspace:
 
 - **Breakpoints**: Click in the gutter next to XSLT instructions
 - **Stepping**: Use F10 (step over), F11 (step into), Shift+F11 (step out)
-- **Variables**: Inspect context nodes, attributes, and variables in the Variables panel
+- **Variables**: Inspect context nodes, attributes, and XSLT variables in the Variables panel
+  - **XSLT Variables** are automatically captured and displayed
+  - ⚠️ Only variables with `@select` attribute are captured
+  - Variables with content (not `@select`) won't appear - use `@select` with XSLT 3.0 `!` operator instead
+  - See [VARIABLE-EVALUATION-FIX.md](VARIABLE-EVALUATION-FIX.md) for details
 - **Watch**: Add XPath expressions to watch their values
 - **Console**: Evaluate XPath expressions in the Debug Console
 
