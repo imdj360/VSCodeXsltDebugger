@@ -23,11 +23,12 @@ A powerful Visual Studio Code extension that enables debugging support for XSLT 
 ## Features
 
 - **Breakpoint Support**: Set breakpoints in XSLT files and step through transformations
-- **Variable Inspection**: Inspect XSLT context, variables, and XML node values
+- **Variable Inspection**: Automatically materialises XSLT variables and context nodes inside VS Code’s VARIABLES pane
 - **XPath Evaluation**: Evaluate XPath expressions in the current context
 - **Inline C# Scripting**: Debug XSLT stylesheets with embedded C# code using Roslyn
 - **Multiple Engines**: Support for compiled XSLT engine (XSLT 1.0) and Saxon engine (XSLT 2.0/3.0)
 - **Cross-Platform**: Works on Windows, macOS, and Linux
+- **Probe Tagging**: Instrumented breakpoints and trace messages are tagged with `dbg:probe="1"` so repeated runs stay idempotent
 
 ## XSLT Processing Engines
 
@@ -39,7 +40,7 @@ The debugger supports two engines to handle different XSLT versions and use case
 | --------------------- | ---------------------------------------------------------- |
 | **XSLT Version**      | 1.0                                                        |
 | **Special Features**  | Inline C# scripting via `msxsl:script`                     |
-| **Debugging Support** | Full breakpoint and step-through debugging                 |
+| **Debugging Support** | Breakpoints via `dbg:break()` inline instruction; no `xsl:message` injection |
 | **Platform Support**  | Windows, macOS, Linux                                      |
 | **Best For**          | XSLT 1.0 stylesheets, especially those with inline C# code |
 
@@ -50,7 +51,7 @@ The debugger supports two engines to handle different XSLT versions and use case
 | **XSLT Version**      | 2.0 and 3.0                                                                     |
 | **Implementation**    | SaxonHE10Net31Api (community IKVM build)                                        |
 | **XPath Support**     | 2.0 and 3.0                                                                     |
-| **Debugging Support** | Transform execution (breakpoint debugging in development)                       |
+| **Debugging Support** | Breakpoints + variable tracing through `dbg:break()` and `xsl:message` probes    |
 | **Platform Support**  | Windows, macOS, Linux                                                           |
 | **License**           | Mozilla Public License 2.0 (free and open source)                               |
 | **Best For**          | Modern XSLT 2.0/3.0 stylesheets (same approach as Azure Logic Apps Data Mapper) |
@@ -350,24 +351,50 @@ The debugger supports XSLT stylesheets with embedded C# code using `msxsl:script
 
 ## Architecture
 
-The extension is built on three main components:
+The workflow is split between a lightweight VS Code entry point and a .NET debug adapter that owns execution and instrumentation.
 
-1. **TypeScript Extension** ([src/extension.ts](src/extension.ts))
+```
+┌─────────────────────────────┐
+│   VS Code Extension (TS)    │
+│   src/extension.ts          │
+│   • resolves configs        │
+│   • launches adapter        │
+└───────────────┬─────────────┘
+                │ DAP over stdio
+┌───────────────▼─────────────┐
+│     .NET Debug Adapter       │
+│  XsltDebugger.DebugAdapter   │
+│ ┌──────────────────────────┐ │
+│ │        DapServer         │ │
+│ │  maps DAP ⇄ engine APIs  │ │
+│ └───────────┬──────────────┘ │
+│             │                 │
+│    ┌────────▼────────┐        │
+│    │XsltEngineManager│        │
+│    │ state + logging │        │
+│    └────────┬────────┘        │
+│             │                 │
+│ ┌───────────▼──────────┐      │
+│ │  XsltEngineFactory   │      │
+│ └──────┬────────┬──────┘      │
+│        │        │             │
+│  ┌─────▼┐   ┌───▼───────┐     │
+│  │Compiled│ │  Saxon    │     │
+│  │Engine  │ │  Engine   │     │
+│  └──┬────┘ └──┬────────┘     │
+│     │         │               │
+│  dbg:break via │speedy XPath  │
+│  XsltDebugExt  │SaxonDebugExt │
+└─────┴──────────┴──────────────┘
+```
 
-   - VS Code integration layer
-   - Debug configuration provider
-   - Debug adapter factory
-
-2. **C# Debug Adapter** ([XsltDebugger.DebugAdapter/](XsltDebugger.DebugAdapter/))
-
-   - Implements Debug Adapter Protocol (DAP)
-   - XSLT execution engines (compiled and Saxon .NET)
-   - Breakpoint management and stepping logic
-
-3. **Instrumentation Engine** ([XsltDebugger.DebugAdapter/XsltInstrumenter.cs](XsltDebugger.DebugAdapter/XsltInstrumenter.cs))
-   - Dynamically modifies XSLT to insert debug hooks
-   - Captures execution context at breakpoints
-   - Enables variable inspection
+- **TypeScript extension** wires the debug type, resolves `${workspace}` paths, and launches the adapter (`dotnet XsltDebugger.DebugAdapter.dll`).
+- **DapServer** owns the Debug Adapter Protocol: `launch`, `setBreakpoints`, `variables`, `evaluate`, etc., and forwards them through `XsltEngineManager`.
+- **XsltEngineManager** tracks the current engine, breakpoints, stop reasons, and captured variables. It exposes events the adapter translates into DAP notifications.
+- **Engine factory** chooses between:
+  - `XsltCompiledEngine` (XslCompiledTransform) for XSLT 1.0 and inline C#. It rewrites the DOM with `<xsl:value-of select="dbg:break(...)">` plus tagged `xsl:message` instructions.
+  - `SaxonEngine` (Saxon HE via IKVM) for XSLT 2.0/3.0. It injects `<xsl:sequence select="dbg:break(...) dbg:probe='1'"/>` so functions and advanced constructs remain side-effect free. `SaxonDebugExtension` exposes the `dbg:break()` function that raises breakpoints back to the adapter.
+- **Tests** (`XsltDebugger.Tests`) run the adapter engines end-to-end with real XSLT samples (guardrails, advanced v2/v3, inline C#) to ensure instrumentation and logging stay consistent.
 
 ## What's New
 
@@ -494,3 +521,4 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 - **SaxonHE10Net31Api**: Mozilla Public License 2.0 (Martin Honnen's community IKVM build)
 ```
+- **Variable Capture via `xsl:message`**: For the Saxon engine, `<xsl:message select="('[DBG]', '$var', …)" dbg:probe="1"/>` is emitted around safe variables and loops so captured values appear in the VARIABLES view without mutating the result tree.
