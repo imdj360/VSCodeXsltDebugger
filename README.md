@@ -114,6 +114,7 @@ These tradeoffs ensure reliable, cross-platform debugging without slowing down t
    npm install
    npm run compile
    dotnet build ./XsltDebugger.DebugAdapter
+   dotnet test ./XsltDebugger.Tests/XsltDebugger.Tests.csproj -v minimal
    ```
 
 2. **Run the Extension Development Host**:

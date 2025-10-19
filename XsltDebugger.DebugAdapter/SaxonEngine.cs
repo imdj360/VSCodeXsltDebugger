@@ -22,6 +22,27 @@ public class SaxonEngine : IXsltEngine
     private Processor? _processor;
     private XsltTransformer? _transformer;
 
+    // Put near the top of SaxonEngine
+    private static readonly HashSet<string> NeverTarget = new(StringComparer.Ordinal)
+    {
+    "stylesheet","transform","attribute-set","decimal-format","import","include","key",
+    "namespace-alias","output","preserve-space","strip-space",
+    // 2.0/3.0 top-level/meta
+    "function","accumulator","character-map","import-schema"
+    };
+
+
+
+    private static readonly HashSet<string> DisallowChildProbe = new(StringComparer.Ordinal)
+    {
+    // Places where inserting as first child is illegal/risky
+    "attribute","comment","processing-instruction","namespace",
+    "output","key","decimal-format","character-map",
+    // 2.0/3.0
+    "sequence","analyze-string","result-document","iterate",
+    "try","catch","fork","where-populated","assert",
+    "accumulator-rule","merge","merge-source","merge-key"
+    };
     public async Task StartAsync(string stylesheet, string xml, bool stopOnEntry)
     {
         // Log before scheduling to confirm StartAsync was invoked
@@ -569,6 +590,52 @@ public class SaxonEngine : IXsltEngine
         }
     }
 
+    private static readonly HashSet<string> FragileAnywhere = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "function",
+        "sequence",
+        "iterate",
+        "merge",
+        "merge-source",
+        "merge-key",
+        "merge-action",
+        "merge-input",
+        "merge-scope",
+        "try",
+        "catch",
+        "finally",
+        "accumulator",
+        "accumulator-rule"
+    };
+
+    private static readonly HashSet<string> ExcludedDirectElements = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "stylesheet",
+        "transform",
+        "attribute-set",
+        "decimal-format",
+        "import",
+        "include",
+        "key",
+        "namespace-alias",
+        "output",
+        "preserve-space",
+        "strip-space",
+        "message",
+        "sort",
+        "param",
+        "variable",
+        "with-param",
+        "accumulator",
+        "character-map",
+        "import-schema"
+    };
+
+    private static readonly HashSet<string> SortElementNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "sort"
+    };
+
     private void InstrumentStylesheet(XDocument doc)
     {
         if (doc.Root == null)
@@ -577,6 +644,7 @@ public class SaxonEngine : IXsltEngine
         }
 
         var xsltNamespace = doc.Root.Name.Namespace;
+        var debugNamespace = (XNamespace)DebugNamespace;
         var candidates = doc
             .Descendants()
             .Where(e => ShouldInstrument(e, xsltNamespace))
@@ -591,7 +659,6 @@ public class SaxonEngine : IXsltEngine
                 var linesText = string.Join(",", candidates.Select(c => c.Line!.Value).Distinct().OrderBy(x => x));
                 XsltEngineManager.NotifyOutput($"[trace] instrumented lines (saxon) for '{_currentStylesheet}': [{linesText}]");
 
-                // Debug: show which elements are being instrumented
                 foreach (var (element, line) in candidates.Take(20))
                 {
                     var elemName = element.Name.LocalName;
@@ -609,75 +676,54 @@ public class SaxonEngine : IXsltEngine
                 continue;
             }
 
-            // Double-check: Skip if inside a function or variable (safety check)
-            if (element.Ancestors().Any(a => a.Name.Namespace == xsltNamespace &&
-                (a.Name.LocalName is "function" or "variable" or "param" or "with-param")))
-            {
-                continue;
-            }
-
-            var isXsltElement = element.Name.Namespace == xsltNamespace;
-            var breakCall = new XElement(
-                xsltNamespace + "value-of",
-                new XAttribute("select", $"dbg:break({line!.Value}, .)"));
-
-            XElement? forEachMessage = null;
-            if (isXsltElement && string.Equals(element.Name.LocalName, "for-each", StringComparison.OrdinalIgnoreCase))
-            {
-                var linePrefix = line.HasValue ? $"line={line.Value} " : string.Empty;
-                var selectAttr = element.Attribute("select")?.Value ?? string.Empty;
-                var safeSelect = string.IsNullOrWhiteSpace(selectAttr) ? "(none)" : EscapeApostrophes(selectAttr.Trim());
-                var messageSelect =
-                    $"('[DBG]', 'for-each', concat('{linePrefix}select={safeSelect} ', 'pos=', string(position())))";
-                forEachMessage = new XElement(
-                    xsltNamespace + "message",
-                    new XAttribute("select", messageSelect));
-            }
-
             var parent = element.Parent;
-            var parentIsXslt = parent?.Name.Namespace == xsltNamespace;
+            var parentIsXslt = parent.Name.Namespace == xsltNamespace;
+            var isXsltElement = element.Name.Namespace == xsltNamespace;
+            var lineNumber = line!.Value;
 
-            if (parentIsXslt && string.Equals(parent!.Name.LocalName, "choose", StringComparison.OrdinalIgnoreCase))
+            if (parentIsXslt && string.Equals(parent.Name.LocalName, "choose", StringComparison.OrdinalIgnoreCase))
             {
-                if (isXsltElement && (string.Equals(element.Name.LocalName, "when", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(element.Name.LocalName, "otherwise", StringComparison.OrdinalIgnoreCase)))
+                if (!(isXsltElement &&
+                      (string.Equals(element.Name.LocalName, "when", StringComparison.OrdinalIgnoreCase) ||
+                       string.Equals(element.Name.LocalName, "otherwise", StringComparison.OrdinalIgnoreCase))))
                 {
-                    element.AddFirst(breakCall);
+                    continue;
                 }
+
+                if (HasChildProbe(element, debugNamespace))
+                {
+                    continue;
+                }
+
+                var chooseProbes = BuildProbesForElement(element, lineNumber, xsltNamespace, debugNamespace);
+                InsertProbesAsFirstChild(element, chooseProbes, xsltNamespace);
                 continue;
             }
 
-            if (CanInsertAsFirstChild(element, isXsltElement))
+            if (CanInsertAsFirstChild(element, xsltNamespace))
             {
-                if (forEachMessage != null)
+                if (HasChildProbe(element, debugNamespace))
                 {
-                    element.AddFirst(forEachMessage);
-                    forEachMessage.AddAfterSelf(breakCall);
-                    if (XsltEngineManager.IsLogEnabled && line.HasValue)
-                    {
-                        XsltEngineManager.NotifyOutput($"[debug]   Instrumented for-each loop with position tracking at line {line.Value}");
-                    }
+                    continue;
                 }
-                else
-                {
-                    element.AddFirst(breakCall);
-                }
+
+                var childProbes = BuildProbesForElement(element, lineNumber, xsltNamespace, debugNamespace);
+                InsertProbesAsFirstChild(element, childProbes, xsltNamespace);
             }
             else
             {
-                if (forEachMessage != null)
+                if (HasSiblingProbeBefore(element, debugNamespace))
                 {
-                    element.AddBeforeSelf(forEachMessage);
-                    forEachMessage.AddAfterSelf(breakCall);
-                    if (XsltEngineManager.IsLogEnabled && line.HasValue)
-                    {
-                        XsltEngineManager.NotifyOutput($"[debug]   Instrumented for-each loop with position tracking at line {line.Value}");
-                    }
+                    continue;
                 }
-                else
+
+                var siblingProbes = BuildProbesForElement(element, lineNumber, xsltNamespace, debugNamespace);
+                if (siblingProbes.Count == 0)
                 {
-                    element.AddBeforeSelf(breakCall);
+                    continue;
                 }
+
+                element.AddBeforeSelf(siblingProbes.Cast<object>().ToArray());
             }
         }
     }
@@ -748,15 +794,18 @@ public class SaxonEngine : IXsltEngine
             return false;
         }
 
+        if (HasFragileAncestorOrSelf(variable, xsltNamespace))
+        {
+            return false;
+        }
+
         var parentLocalName = parent.Name.LocalName;
         var parentIsXslt = parent.Name.Namespace == xsltNamespace;
 
-        // Cannot insert xsl:message in these contexts:
         if (parentIsXslt)
         {
             switch (parentLocalName)
             {
-                // Cannot add instructions inside these elements
                 case "attribute":
                 case "comment":
                 case "processing-instruction":
@@ -765,42 +814,40 @@ public class SaxonEngine : IXsltEngine
                 case "key":
                 case "decimal-format":
                 case "character-map":
-                    return false;
-
-                // Cannot add message inside xsl:function body if variable has content
-                // But if variable has @select, it's safe to add message after it
                 case "function":
-                    // If variable has select attribute, it's a single element - safe to add after
-                    // If variable has content, adding after might be inside the function result
-                    return variable.Attribute("select") != null || !variable.HasElements;
-
-                // In xsl:variable or xsl:param content - not safe
                 case "variable":
                 case "param":
                 case "with-param":
+                case "sequence":
+                case "iterate":
+                case "merge":
+                case "merge-source":
+                case "merge-key":
+                case "merge-action":
+                case "merge-input":
+                case "merge-scope":
+                case "try":
+                case "catch":
+                case "finally":
                     return false;
             }
         }
 
-        // Check if we're inside an attribute value template context
-        // Variables inside xsl:attribute content need special handling
         var attributeAncestor = variable.Ancestors()
             .FirstOrDefault(a => a.Name.Namespace == xsltNamespace &&
-                                a.Name.LocalName == "attribute");
+                                 a.Name.LocalName == "attribute");
         if (attributeAncestor != null)
         {
             return false;
         }
 
-        // Check if variable is in xsl:sequence - adding message after might break sequence
         if (parentIsXslt && parentLocalName == "sequence")
         {
             return false;
         }
 
-        // Variables inside xsl:analyze-string have strict content model
         if (variable.Ancestors().Any(a => a.Name.Namespace == xsltNamespace &&
-                                         a.Name.LocalName == "analyze-string"))
+                                          a.Name.LocalName == "analyze-string"))
         {
             return false;
         }
@@ -838,18 +885,34 @@ public class SaxonEngine : IXsltEngine
             return false;
         }
 
+        if (element.Ancestors().Any(a => a.Name.Namespace == xsltNamespace &&
+            (a.Name.LocalName is "variable" or "param" or "with-param")))
+        {
+            return false;
+        }
+
+        if (HasFragileAncestorOrSelf(element, xsltNamespace))
+        {
+            return false;
+        }
+
         if (element.Name.Namespace == xsltNamespace)
         {
-            var localName = element.Name.LocalName;
-            return localName switch
+            var parent = element.Parent;
+            if (parent != null && parent.Name.Namespace == xsltNamespace)
             {
-                "stylesheet" or "transform" => false,
-                "attribute-set" or "decimal-format" or "import" or "include" or "key" or "namespace-alias" or "output" or "preserve-space" or "strip-space" => false,
-                "param" or "variable" or "with-param" => false,
-                // XSLT 2.0/3.0 specific top-level elements (Saxon)
-                "function" or "accumulator" or "character-map" or "import-schema" => false,
-                _ => true
-            };
+                var parentLocal = parent.Name.LocalName;
+                if (string.Equals(parentLocal, "stylesheet", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(parentLocal, "transform", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!string.Equals(element.Name.LocalName, "template", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            return !ExcludedDirectElements.Contains(element.Name.LocalName);
         }
 
         var nearestXsltAncestor = element.Ancestors().FirstOrDefault(a => a.Name.Namespace == xsltNamespace);
@@ -858,30 +921,12 @@ public class SaxonEngine : IXsltEngine
             return false;
         }
 
-        var ancestorLocal = nearestXsltAncestor.Name.LocalName;
-        if (ancestorLocal is "stylesheet" or "transform")
+        if (ExcludedDirectElements.Contains(nearestXsltAncestor.Name.LocalName))
         {
             return false;
         }
 
-        // Don't instrument elements inside XSLT 2.0/3.0 function bodies
-        // Functions should be debuggable but not auto-instrumented
-        // Check ALL ancestors, not just the nearest one, to handle nested structures
-        // like xsl:choose inside xsl:function
-        if (element.Ancestors().Any(a => a.Name.Namespace == xsltNamespace && a.Name.LocalName is "function"))
-        {
-            return false;
-        }
-
-        // Don't instrument elements inside variable/param declarations
-        // Adding instrumentation inside variable content can inject unwanted values
-        if (element.Ancestors().Any(a => a.Name.Namespace == xsltNamespace &&
-            a.Name.LocalName is "variable" or "param" or "with-param"))
-        {
-            return false;
-        }
-
-        return true;
+        return !HasFragileAncestorOrSelf(nearestXsltAncestor, xsltNamespace);
     }
 
     private static int? GetLineNumber(XElement element)
@@ -893,27 +938,36 @@ public class SaxonEngine : IXsltEngine
         return null;
     }
 
-    private static bool CanInsertAsFirstChild(XElement element, bool isXsltElement)
+    private static bool CanInsertAsFirstChild(XElement element, XNamespace xsltNamespace)
     {
-        if (element == null)
+        if (element == null || element.Name.Namespace != xsltNamespace)
         {
             return false;
         }
 
-        if (!isXsltElement)
+        if (element.IsEmpty)
         {
             return false;
         }
 
-        var parent = element.Parent;
         var localName = element.Name.LocalName;
+        if (FragileAnywhere.Contains(localName))
+        {
+            return false;
+        }
+
+        if (XsltCompiledEngine.ElementsDisallowingChildInstrumentation.Contains(localName))
+        {
+            return false;
+        }
 
         if (XsltCompiledEngine.InlineInstrumentationTargets.Contains(localName))
         {
             return true;
         }
 
-        if (parent != null)
+        var parent = element.Parent;
+        if (parent != null && parent.Name.Namespace == xsltNamespace)
         {
             var parentLocal = parent.Name.LocalName;
             if (string.Equals(parentLocal, "stylesheet", StringComparison.OrdinalIgnoreCase) ||
@@ -924,17 +978,167 @@ public class SaxonEngine : IXsltEngine
             }
         }
 
-        if (element.IsEmpty)
+        return false;
+    }
+
+    private static bool HasFragileAncestorOrSelf(XElement element, XNamespace xsltNamespace)
+    {
+        return element.AncestorsAndSelf()
+            .Any(a => a.Name.Namespace == xsltNamespace &&
+                      FragileAnywhere.Contains(a.Name.LocalName));
+    }
+
+    private static bool HasChildProbe(XElement element, XNamespace debugNamespace)
+    {
+        return element.Elements()
+            .Any(e => e.Attribute(debugNamespace + "probe") != null);
+    }
+
+    private static bool HasSiblingProbeBefore(XElement element, XNamespace debugNamespace)
+    {
+        return element.ElementsBeforeSelf()
+            .Any(e => e.Attribute(debugNamespace + "probe") != null);
+    }
+
+    private static List<XElement> BuildProbesForElement(XElement element, int line, XNamespace xsltNamespace, XNamespace debugNamespace)
+    {
+        var probes = new List<XElement>();
+
+        if (element.Name.Namespace == xsltNamespace)
         {
-            return false;
+            var localName = element.Name.LocalName;
+            if (string.Equals(localName, "for-each", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(localName, "for-each-group", StringComparison.OrdinalIgnoreCase))
+            {
+                var selectAttr = element.Attribute("select")?.Value ?? string.Empty;
+                var safeSelect = string.IsNullOrWhiteSpace(selectAttr) ? "(none)" : EscapeApostrophes(selectAttr.Trim());
+                var loopLabel = string.Equals(localName, "for-each-group", StringComparison.OrdinalIgnoreCase)
+                    ? "for-each-group"
+                    : "for-each";
+                var messageSelect =
+                    $"('[DBG]', '{loopLabel}', concat('line={line} select={safeSelect} ', 'pos=', string(position())))";
+                var messageProbe = new XElement(
+                    xsltNamespace + "message",
+                    new XAttribute("select", messageSelect),
+                    new XAttribute(debugNamespace + "probe", "1"));
+                probes.Add(messageProbe);
+            }
         }
 
-        if (XsltCompiledEngine.ElementsDisallowingChildInstrumentation.Contains(localName))
+        var breakProbe = new XElement(
+            xsltNamespace + "sequence",
+            new XAttribute("select", $"dbg:break({line}, .)"),
+            new XAttribute(debugNamespace + "probe", "1"));
+        probes.Add(breakProbe);
+
+        return probes;
+    }
+
+    private static readonly HashSet<string> DeclarationLeaderNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "param",
+        "variable",
+        "with-param"
+    };
+
+    private static void InsertProbesAsFirstChild(XElement element, IReadOnlyList<XElement> probes, XNamespace xsltNamespace)
+    {
+        if (probes.Count == 0)
         {
-            return false;
+            return;
         }
 
-        return true;
+        if (element.Name.Namespace == xsltNamespace)
+        {
+            var localName = element.Name.LocalName;
+            if (string.Equals(localName, "for-each", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(localName, "for-each-group", StringComparison.OrdinalIgnoreCase))
+            {
+                InsertAfterLeadingSorts(element, probes);
+                return;
+            }
+
+            if (string.Equals(localName, "template", StringComparison.OrdinalIgnoreCase))
+            {
+                InsertAfterLeadingDeclarations(element, probes, xsltNamespace);
+                return;
+            }
+        }
+
+        for (var i = probes.Count - 1; i >= 0; i--)
+        {
+            element.AddFirst(probes[i]);
+        }
+    }
+
+    private static void InsertAfterLeadingSorts(XElement container, IReadOnlyList<XElement> probes)
+    {
+        if (probes.Count == 0)
+        {
+            return;
+        }
+
+        var xsltNamespace = container.Name.Namespace;
+        XElement? anchor = null;
+
+        foreach (var child in container.Elements())
+        {
+            if (child.Name.Namespace == xsltNamespace && SortElementNames.Contains(child.Name.LocalName))
+            {
+                anchor = child;
+                continue;
+            }
+            break;
+        }
+
+        if (anchor == null)
+        {
+            for (var i = probes.Count - 1; i >= 0; i--)
+            {
+                container.AddFirst(probes[i]);
+            }
+            return;
+        }
+
+        foreach (var probe in probes)
+        {
+            anchor.AddAfterSelf(probe);
+            anchor = probe;
+        }
+    }
+
+    private static void InsertAfterLeadingDeclarations(XElement container, IReadOnlyList<XElement> probes, XNamespace xsltNamespace)
+    {
+        if (probes.Count == 0)
+        {
+            return;
+        }
+
+        XElement? anchor = null;
+        foreach (var child in container.Elements())
+        {
+            if (child.Name.Namespace == xsltNamespace && DeclarationLeaderNames.Contains(child.Name.LocalName))
+            {
+                anchor = child;
+                continue;
+            }
+            break;
+        }
+
+        if (anchor == null)
+        {
+            for (var i = probes.Count - 1; i >= 0; i--)
+            {
+                container.AddFirst(probes[i]);
+            }
+            return;
+        }
+
+        foreach (var probe in probes)
+        {
+            anchor.AddAfterSelf(probe);
+            anchor = probe;
+        }
     }
 
     private static string EscapeApostrophes(string value)

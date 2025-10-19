@@ -23,6 +23,61 @@ public class SaxonEngineIntegrationTests
         return Path.GetFullPath(fullPath);
     }
 
+    private static async Task<(List<string> Output, string OutFile, int ExitCode)> RunSaxonAsync(
+        string stylesheetRelativePath,
+        string xmlRelativePath,
+        LogLevel logLevel = LogLevel.TraceAll)
+    {
+        var stylesheetPath = GetTestDataPath(stylesheetRelativePath);
+        var xmlPath = GetTestDataPath(xmlRelativePath);
+        var fullStylesheetPath = Path.GetFullPath(stylesheetPath);
+        var fullXmlPath = Path.GetFullPath(xmlPath);
+
+        var engine = new SaxonEngine();
+        var outputLog = new List<string>();
+        var outputLock = new object();
+        var terminatedSource = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        void OnOutput(string message)
+        {
+            lock (outputLock)
+            {
+                outputLog.Add(message);
+            }
+        }
+        void OnTerminated(int code) => terminatedSource.TrySetResult(code);
+
+        var stylesheetDir = Path.GetDirectoryName(fullStylesheetPath) ?? throw new InvalidOperationException("Unable to determine stylesheet directory.");
+        var outDir = Path.Combine(stylesheetDir, "out");
+        var outFile = Path.Combine(outDir, $"{Path.GetFileNameWithoutExtension(fullStylesheetPath)}.out.xml");
+        CleanupOutput(outFile, outDir);
+
+        XsltEngineManager.Reset();
+        XsltEngineManager.SetDebugFlags(true, logLevel);
+        XsltEngineManager.EngineOutput += OnOutput;
+        XsltEngineManager.EngineTerminated += OnTerminated;
+
+        try
+        {
+            await engine.StartAsync(fullStylesheetPath, fullXmlPath, stopOnEntry: false);
+            var exitCode = await terminatedSource.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+            List<string> snapshot;
+            lock (outputLock)
+            {
+                snapshot = outputLog.ToList();
+            }
+
+            return (snapshot, outFile, exitCode);
+        }
+        finally
+        {
+            XsltEngineManager.EngineOutput -= OnOutput;
+            XsltEngineManager.EngineTerminated -= OnTerminated;
+            XsltEngineManager.Reset();
+        }
+    }
+
     [Fact]
     public async Task SaxonEngine_ShouldCaptureVariablesAndHitBreakpoints()
     {
@@ -259,6 +314,76 @@ public class SaxonEngineIntegrationTests
             XsltEngineManager.EngineOutput -= OnOutput;
             XsltEngineManager.EngineTerminated -= OnTerminated;
             XsltEngineManager.Reset();
+        }
+    }
+
+    [Fact]
+    public async Task SaxonEngine_ShouldTransformAdvancedXslt2_WithInstrumentation()
+    {
+        var (log, outFile, exitCode) = await RunSaxonAsync("Integration/AdvanceXslt2.xslt", "Integration/AdvanceFile.xml");
+        try
+        {
+            exitCode.Should().Be(0);
+            log.Should().Contain(message => message.Contains("Instrumenting 15 variable", StringComparison.OrdinalIgnoreCase));
+            log.Should().Contain(message => message.Contains("Captured variable: $arrival", StringComparison.OrdinalIgnoreCase));
+            log.Should().Contain(message => message.Contains("Captured variable: $for-each-group", StringComparison.OrdinalIgnoreCase));
+
+            File.Exists(outFile).Should().BeTrue("advanced transform should produce output");
+            var output = await File.ReadAllTextAsync(outFile);
+            output.Should().Contain("<ShipmentSummary");
+            output.Should().Contain("<ReportCount>5</ReportCount>");
+        }
+        finally
+        {
+            var outDir = Path.GetDirectoryName(outFile) ?? string.Empty;
+            CleanupOutput(outFile, outDir);
+        }
+    }
+
+    [Fact]
+    public async Task SaxonEngine_ShouldTransformAdvancedXslt3_WithAccumulatorInstrumentation()
+    {
+        var (log, outFile, exitCode) = await RunSaxonAsync("Integration/AdvanceXslt3.xslt", "Integration/AdvanceFile.xml");
+        try
+        {
+            exitCode.Should().Be(0);
+            log.Should().Contain(message => message.Contains("Instrumenting 24 variable", StringComparison.OrdinalIgnoreCase));
+            log.Should().Contain(message => message.Contains("Captured variable: $arrival-raw", StringComparison.OrdinalIgnoreCase));
+            log.Should().Contain(message => message.Contains("Captured variable: $for-each-group", StringComparison.OrdinalIgnoreCase));
+            log.Any(message => message.Contains("xsl:accumulator-rule", StringComparison.OrdinalIgnoreCase))
+                .Should().BeFalse("accumulator rules must remain free of instrumentation");
+
+            File.Exists(outFile).Should().BeTrue();
+            var output = await File.ReadAllTextAsync(outFile);
+            output.Should().Contain("<LatestReportBeforeDeparture>2025-07-14T12:00:00</LatestReportBeforeDeparture>");
+            output.Should().Contain("<TimezoneApplied>false</TimezoneApplied>");
+        }
+        finally
+        {
+            var outDir = Path.GetDirectoryName(outFile) ?? string.Empty;
+            CleanupOutput(outFile, outDir);
+        }
+    }
+
+    private static void CleanupOutput(string outFile, string outDir)
+    {
+        try
+        {
+            if (!string.IsNullOrEmpty(outFile) && File.Exists(outFile))
+            {
+                File.Delete(outFile);
+            }
+
+            if (!string.IsNullOrEmpty(outDir) &&
+                Directory.Exists(outDir) &&
+                !Directory.EnumerateFileSystemEntries(outDir).Any())
+            {
+                Directory.Delete(outDir);
+            }
+        }
+        catch
+        {
+            // ignore cleanup failures
         }
     }
 }

@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ShipmentConfirmation>
+  <TransportTypeCode>TRUCK</TransportTypeCode>
+  <TransportTypeDescription>Truck</TransportTypeDescription>
+  <TransportMode>Road</TransportMode>
+  <Direction>Outbound</Direction>
+  <Reference>REF-REDACTED</Reference>
+  <Arrival>2025-07-15T08:30:00Z</Arrival>
+  <Departure>2025-07-15T10:45:00+02:00</Departure>
+  <LicensePlate>PLATE-REDACTED</LicensePlate>
+  <Net>12500.756</Net>
+  <Status>Approved</Status>
+
+  <Orders>
+    <Number>ORD-XXXX</Number>
+    <Date>2025-07-15T00:00:00</Date>
+    <CustomerCode>CUST-XXXX</CustomerCode>
+    <CustomerName>LogicApps - iPaaS Tool Helper</CustomerName>
+
+    <OrderItems>
+      <Sequence>10</Sequence>
+      <OperationName>Load truck</OperationName>
+      <OperationCode>LD</OperationCode>
+      <OperationReports>
+        <ReportInfo>
+          <OperationReportDate>2025-07-14T12:00:00</OperationReportDate>
+        </ReportInfo>
+        <ReportInfo>
+          <OperationReportDate>2025-07-13T09:00:00</OperationReportDate>
+        </ReportInfo>
+        <ReportInfo>
+          <OperationReportDate>2025-06-15T06:30:00</OperationReportDate>
+        </ReportInfo>
+      </OperationReports>
+    </OrderItems>
+
+    <OrderItems>
+      <Sequence>20</Sequence>
+      <OperationName>Second load</OperationName>
+      <OperationCode>LD2</OperationCode>
+      <OperationReports>
+        <ReportInfo>
+          <OperationReportDate>2023-07-12</OperationReportDate>
+        </ReportInfo>
+        <ReportInfo>
+          <OperationReportDate>2025-07-16T00:00:00</OperationReportDate>
+        </ReportInfo>
+      </OperationReports>
+    </OrderItems>
+  </Orders>
+</ShipmentConfirmation>

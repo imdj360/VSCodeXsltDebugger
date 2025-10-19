@@ -20,6 +20,10 @@ All notable changes to the XSLT Debugger extension will be documented in this fi
 
 - XSLT 2.0/3.0 support now works reliably cross-platform using pure .NET approach
 - Uses similar approach as Azure Logic Apps Data Mapper but with SaxonHE10Net31Api
+- Documented architecture and function-debugging workflow (README + docs/function-debugging-guidelines.md)
+- Enhanced Saxon instrumentation: `dbg:probe="1"` tagging, safe loop messaging, and accumulator guardrails
+- Added advanced Saxon integration tests (XSLT 2.0/3.0 samples) to regression suite
+- Packaging scripts (`package-*.sh`) now execute unit tests automatically before producing VSIX bundles
 
 ### Credits
 

@@ -1,7 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using Saxon.Api;
+using SaxonItemType = net.sf.saxon.s9api.ItemType;
+using SaxonOccurrence = net.sf.saxon.s9api.OccurrenceIndicator;
+using SaxonSequenceType = net.sf.saxon.s9api.SequenceType;
+using SaxonUnderlyingSequenceType = net.sf.saxon.value.SequenceType;
 
 namespace XsltDebugger.DebugAdapter;
 
@@ -9,6 +14,9 @@ public class SaxonDebugExtension : ExtensionFunctionDefinition
 {
     private readonly SaxonEngine _engine;
     private readonly string _stylesheetPath;
+    private static readonly SaxonSequenceType BreakResultSequenceType =
+        SaxonSequenceType.makeSequenceType(SaxonItemType.ANY_ITEM, SaxonOccurrence.ZERO);
+    private static readonly Func<SaxonUnderlyingSequenceType, XdmSequenceType> SequenceTypeConverter = CreateSequenceTypeConverter();
 
     public SaxonDebugExtension(SaxonEngine engine, string stylesheetPath)
     {
@@ -28,14 +36,33 @@ public class SaxonDebugExtension : ExtensionFunctionDefinition
         new XdmSequenceType(XdmAnyNodeType.Instance, ' ')
     };
 
-    public override XdmSequenceType ResultType(XdmSequenceType[] ArgumentTypes)
+    public override XdmSequenceType ResultType(XdmSequenceType[] argumentTypes)
     {
-        return new XdmSequenceType(XdmAtomicType.BuiltInAtomicType(QName.XS_STRING), ' ');
+        var underlying = BreakResultSequenceType.getUnderlyingSequenceType();
+        return SequenceTypeConverter(underlying);
     }
 
     public override ExtensionFunctionCall MakeFunctionCall()
     {
         return new SaxonDebugExtensionCall(_engine, _stylesheetPath);
+    }
+
+    private static Func<SaxonUnderlyingSequenceType, XdmSequenceType> CreateSequenceTypeConverter()
+    {
+        var method = typeof(XdmSequenceType).GetMethod(
+            "FromSequenceType",
+            BindingFlags.Public | BindingFlags.Static,
+            binder: null,
+            new[] { typeof(SaxonUnderlyingSequenceType) },
+            modifiers: null);
+
+        if (method != null)
+        {
+            return underlying => (XdmSequenceType)method.Invoke(obj: null, parameters: new object[] { underlying })!;
+        }
+
+        // Fallback: single optional item type permits empty result without mutating output.
+        return _ => new XdmSequenceType(XdmAnyItemType.Instance, '?');
     }
 }
 
@@ -106,6 +133,6 @@ public class SaxonDebugExtensionCall : ExtensionFunctionCall
             _engine.RegisterBreakpointHit(_stylesheetPath, line, contextNode);
         }
 
-        return new List<XdmItem> { new XdmAtomicValue(string.Empty) }.GetEnumerator();
+        return EmptyEnumerator<XdmItem>.INSTANCE;
     }
 }
