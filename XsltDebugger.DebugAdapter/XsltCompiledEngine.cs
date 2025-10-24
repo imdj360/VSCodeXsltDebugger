@@ -127,6 +127,9 @@ public class XsltCompiledEngine : IXsltEngine
                 var scripts = xdoc.Descendants(msxsl + "script").ToList();
 
                 var args = new XsltArgumentList();
+                var messageHandler = new CompiledMessageHandler();
+                args.XsltMessageEncountered += messageHandler.OnMessageEncountered;
+
                 var extNamespace = xdoc.Root?.GetNamespaceOfPrefix("ext")?.NamespaceName;
                 if (!string.IsNullOrWhiteSpace(extNamespace))
                 {
@@ -162,6 +165,7 @@ public class XsltCompiledEngine : IXsltEngine
 
                 EnsureDebugNamespace(xdoc);
                 InstrumentStylesheet(xdoc);
+                InstrumentVariables(xdoc);
 
                 var settings = new XsltSettings(enableDocumentFunction: false, enableScript: false);
                 args.AddExtensionObject(DebugNamespace, new XsltDebugExtension(this, _currentStylesheet));
@@ -518,6 +522,140 @@ public class XsltCompiledEngine : IXsltEngine
         }
 
         return true;
+    }
+
+    private static void InstrumentVariables(XDocument doc)
+    {
+        if (doc.Root == null)
+        {
+            return;
+        }
+
+        var xsltNamespace = doc.Root.Name.Namespace;
+
+        // Find all xsl:variable and xsl:param elements
+        var variables = doc
+            .Descendants()
+            .Where(e => e.Name.Namespace == xsltNamespace &&
+                       (e.Name.LocalName == "variable" || e.Name.LocalName == "param"))
+            .Where(e => e.Attribute("name") != null)
+            .Where(e => !IsTopLevelDeclaration(e, xsltNamespace))
+            .ToList();
+
+        if (XsltEngineManager.IsLogEnabled)
+        {
+            XsltEngineManager.NotifyOutput($"[debug] Instrumenting {variables.Count} variable(s) for debugging");
+        }
+
+        foreach (var variable in variables)
+        {
+            var varName = variable.Attribute("name")?.Value;
+            if (string.IsNullOrEmpty(varName))
+            {
+                continue;
+            }
+
+            // GUARDRAILS: Check if it's safe to insert xsl:message after this variable
+            if (!IsSafeToInstrumentVariable(variable, xsltNamespace))
+            {
+                if (XsltEngineManager.IsLogEnabled)
+                {
+                    XsltEngineManager.NotifyOutput($"[debug]   Skipped unsafe instrumentation: ${varName}");
+                }
+                continue;
+            }
+
+            // Create debug message for XSLT 1.0: <xsl:message><xsl:text>[DBG] varName </xsl:text><xsl:value-of select="$varName"/></xsl:message>
+            // XSLT 1.0 doesn't support sequences in the same way as 2.0/3.0, so we use simple string conversion
+            var debugMessage = new XElement(
+                xsltNamespace + "message",
+                new XElement(xsltNamespace + "text", $"[DBG] {varName} "),
+                new XElement(xsltNamespace + "value-of", new XAttribute("select", $"${varName}"))
+            );
+
+            // Insert the message right after the variable declaration
+            variable.AddAfterSelf(debugMessage);
+
+            if (XsltEngineManager.IsLogEnabled)
+            {
+                XsltEngineManager.NotifyOutput($"[debug]   Instrumented variable: ${varName}");
+            }
+        }
+    }
+
+    private static bool IsSafeToInstrumentVariable(XElement variable, XNamespace xsltNamespace)
+    {
+        var parent = variable.Parent;
+        if (parent == null)
+        {
+            return false;
+        }
+
+        if (HasFragileAncestor(variable, xsltNamespace))
+        {
+            return false;
+        }
+
+        var parentLocalName = parent.Name.LocalName;
+        var parentIsXslt = parent.Name.Namespace == xsltNamespace;
+
+        if (parentIsXslt)
+        {
+            switch (parentLocalName)
+            {
+                case "attribute":
+                case "comment":
+                case "processing-instruction":
+                case "namespace":
+                case "output":
+                case "key":
+                case "decimal-format":
+                case "character-map":
+                case "variable":
+                case "param":
+                case "with-param":
+                    return false;
+            }
+        }
+
+        // Don't instrument variables inside xsl:attribute
+        var attributeAncestor = variable.Ancestors()
+            .FirstOrDefault(a => a.Name.Namespace == xsltNamespace &&
+                                 a.Name.LocalName == "attribute");
+        if (attributeAncestor != null)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool IsTopLevelDeclaration(XElement element, XNamespace xsltNamespace)
+    {
+        // Check if this is a top-level variable/param (direct child of stylesheet/transform)
+        var parent = element.Parent;
+        if (parent != null && parent.Name.Namespace == xsltNamespace)
+        {
+            var parentLocal = parent.Name.LocalName;
+            if (parentLocal == "stylesheet" || parentLocal == "transform")
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool HasFragileAncestor(XElement element, XNamespace xsltNamespace)
+    {
+        // For XSLT 1.0, we have fewer fragile contexts than XSLT 2.0/3.0
+        // Main concerns: attribute generation, key/sort contexts
+        return element.Ancestors()
+            .Any(a => a.Name.Namespace == xsltNamespace &&
+                      (a.Name.LocalName == "attribute" ||
+                       a.Name.LocalName == "comment" ||
+                       a.Name.LocalName == "processing-instruction" ||
+                       a.Name.LocalName == "namespace"));
     }
 
     private static List<string> ExtractUsingStatements(string code)

@@ -11,15 +11,16 @@ namespace XsltDebugger.Tests;
 
 public class SaxonEngineIntegrationTests
 {
-    private static string GetProjectDirectory()
+    private static string GetRepositoryRoot()
     {
-        return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", ".."));
+        // From bin/Debug/net8.0, go up 4 levels to reach repository root
+        return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".."));
     }
 
     private static string GetTestDataPath(string relativePath)
     {
-        var projectDir = GetProjectDirectory();
-        var fullPath = Path.Combine(projectDir, "TestData", relativePath.Replace('/', Path.DirectorySeparatorChar));
+        var repoRoot = GetRepositoryRoot();
+        var fullPath = Path.Combine(repoRoot, "TestData", relativePath.Replace('/', Path.DirectorySeparatorChar));
         return Path.GetFullPath(fullPath);
     }
 

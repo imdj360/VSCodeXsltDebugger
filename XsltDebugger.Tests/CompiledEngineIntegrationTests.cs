@@ -11,15 +11,16 @@ namespace XsltDebugger.Tests;
 
 public class CompiledEngineIntegrationTests
 {
-    private static string GetProjectDirectory()
+    private static string GetRepositoryRoot()
     {
-        return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", ".."));
+        // From bin/Debug/net8.0, go up 4 levels to reach repository root
+        return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".."));
     }
 
     private static string GetTestDataPath(string relativePath)
     {
-        var projectDir = GetProjectDirectory();
-        var fullPath = Path.Combine(projectDir, "TestData", relativePath.Replace('/', Path.DirectorySeparatorChar));
+        var repoRoot = GetRepositoryRoot();
+        var fullPath = Path.Combine(repoRoot, "TestData", relativePath.Replace('/', Path.DirectorySeparatorChar));
         return Path.GetFullPath(fullPath);
     }
 
@@ -101,6 +102,87 @@ public class CompiledEngineIntegrationTests
             XsltEngineManager.EngineTerminated -= OnTerminated;
             XsltEngineManager.Reset();
             TryDeleteOutput(outFile, outDir);
+        }
+    }
+
+    [Fact]
+    public async Task CompiledEngine_ShouldCaptureVariablesAndHitBreakpoints()
+    {
+        var stylesheetPath = GetTestDataPath("Integration/VariableLoggingSampleV1.xslt");
+        var xmlPath = GetTestDataPath("Integration/VariableLoggingSampleV1Input.xml");
+        var fullStylesheetPath = Path.GetFullPath(stylesheetPath);
+        var fullXmlPath = Path.GetFullPath(xmlPath);
+        var breakpoints = new[] { (fullStylesheetPath, 8) };
+
+        var engine = new XsltCompiledEngine();
+        var outputLog = new List<string>();
+        var outputLock = new object();
+        var breakpointHitSource = new TaskCompletionSource<(string file, int line, DebugStopReason reason)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var terminatedSource = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        void OnOutput(string message)
+        {
+            lock (outputLock)
+            {
+                outputLog.Add(message);
+            }
+        }
+
+        void OnStopped(string file, int line, DebugStopReason reason)
+        {
+            breakpointHitSource.TrySetResult((file, line, reason));
+            _ = engine.ContinueAsync();
+        }
+
+        void OnTerminated(int code) => terminatedSource.TrySetResult(code);
+
+        XsltEngineManager.Reset();
+        XsltEngineManager.SetDebugFlags(true, LogLevel.TraceAll);
+        XsltEngineManager.EngineOutput += OnOutput;
+        XsltEngineManager.EngineStopped += OnStopped;
+        XsltEngineManager.EngineTerminated += OnTerminated;
+
+        try
+        {
+            engine.SetBreakpoints(breakpoints);
+            await engine.StartAsync(fullStylesheetPath, fullXmlPath, stopOnEntry: false);
+
+            var exitCode = await terminatedSource.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            exitCode.Should().Be(0, "successful transformation should terminate with 0 exit code");
+
+            var breakpointHit = await breakpointHitSource.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            breakpointHit.file.Should().Be(fullStylesheetPath);
+            breakpointHit.line.Should().Be(8);
+            breakpointHit.reason.Should().Be(DebugStopReason.Breakpoint);
+
+            // Verify variables were captured
+            XsltEngineManager.Variables.Should().ContainKey("count");
+            XsltEngineManager.Variables["count"].Should().Be("2");
+
+            XsltEngineManager.Variables.Should().ContainKey("firstName");
+            XsltEngineManager.Variables["firstName"].Should().NotBeNull();
+            XsltEngineManager.Variables["firstName"]!.ToString().Should().Contain("Alpha");
+
+            List<string> snapshot;
+            lock (outputLock)
+            {
+                snapshot = outputLog.ToList();
+            }
+
+            // Verify variable instrumentation occurred
+            snapshot.Should().Contain(message => message.Contains("[debug] Instrumenting 2 variable", StringComparison.OrdinalIgnoreCase));
+            snapshot.Should().Contain(message => message.Contains("Captured variable: $count", StringComparison.OrdinalIgnoreCase));
+            snapshot.Should().Contain(message => message.Contains("Captured variable: $firstName", StringComparison.OrdinalIgnoreCase));
+
+            // Verify xsl:message output appears
+            snapshot.Should().Contain(message => message.Contains("[xsl:message]", StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            XsltEngineManager.EngineOutput -= OnOutput;
+            XsltEngineManager.EngineStopped -= OnStopped;
+            XsltEngineManager.EngineTerminated -= OnTerminated;
+            XsltEngineManager.Reset();
         }
     }
 
