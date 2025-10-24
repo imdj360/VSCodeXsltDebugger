@@ -96,10 +96,10 @@ These tradeoffs ensure reliable, cross-platform debugging without slowing down t
 
    ```bash
    # macOS
-   code --install-extension xsltdebugger-darwin-0.0.3.vsix
+   code --install-extension xsltdebugger-darwin-darwin-arm64-0.5.0.vsix
 
    # Windows
-   code --install-extension xsltdebugger-windows-0.0.3.vsix
+   code --install-extension xsltdebugger-windows-win32-x64-0.5.0.vsix
    ```
 
 2. **Create a debug configuration** in [.vscode/launch.json](#setting-up-a-debug-configuration)
@@ -124,23 +124,23 @@ These tradeoffs ensure reliable, cross-platform debugging without slowing down t
 
 3. **Package and install locally**:
 
-   **Platform-specific packaging** (optimized size, only includes binaries for target platform):
+   **Build both platforms at once** (recommended):
 
    ```bash
-   # For macOS
-   ./package-darwin.sh
-   code --install-extension xsltdebugger-darwin-*.vsix
-
-   # For Windows
-   ./package-win.sh
-   code --install-extension xsltdebugger-windows-*.vsix
+   ./package-all.sh
+   code --install-extension xsltdebugger-darwin-darwin-arm64-0.5.0.vsix
    ```
 
-   **Universal packaging** (includes all platforms, larger file size):
+   **Platform-specific packaging** (build individually):
 
    ```bash
-   npx vsce package
-   code --install-extension xsltdebugger-*.vsix
+   # For macOS only
+   ./package-darwin.sh
+   code --install-extension xsltdebugger-darwin-darwin-arm64-0.5.0.vsix
+
+   # For Windows only
+   ./package-win.sh
+   code --install-extension xsltdebugger-windows-win32-x64-0.5.0.vsix
    ```
 
 ## Usage
@@ -401,21 +401,35 @@ The workflow is split between a lightweight VS Code entry point and a .NET debu
 
 See the [CHANGELOG](CHANGELOG.md) for detailed version history.
 
-### Latest Release: v0.0.3
+### Latest Release: v0.5.0
 
-**Saxon .NET Engine Improvements**
+**Test Infrastructure & Code Quality Improvements**
 
-- Fixed compatibility issues with .NET 8+ using SaxonHE10Net31Api (community IKVM build)
-- XSLT 2.0/3.0 support now works cross-platform without Java
-- Same reliable approach used by Azure Logic Apps Data Mapper
+- Centralized test data to `TestData/Integration/` folder at repository root for better organization
+- All test projects now reference common test data location
+- Enhanced test coverage with 105 passing integration and unit tests
+- Improved ConsoleTest project with unified engine support (both Compiled and Saxon)
 
-**Key Features**
+**Variable Debugging Enhancements**
 
-- Full debugging support for XSLT 1.0 with breakpoints and stepping
-- Transform execution for XSLT 2.0/3.0 (breakpoint debugging in development)
-- Inline C# scripting with `msxsl:script`
-- Variable inspection and XPath evaluation
-- Configurable log levels for troubleshooting
+- Enhanced variable instrumentation for both Compiled and Saxon engines
+- Improved variable capture and display in VS Code Variables panel
+- Better support for XSLT 2.0/3.0 variable debugging with Saxon engine
+- Added `CompiledMessageHandler` for enhanced compiled engine debugging
+
+**Engine Improvements**
+
+- Unified console testing with `ProgramUsingEngineType.cs` supporting both engines
+- Better breakpoint context information and handling
+- Enhanced xsl:message support for debugging output
+- Improved XSLT 2.0/3.0 features support including accumulators
+
+**Developer Experience**
+
+- Platform-specific packaging with optimized binary sizes
+- Updated build scripts for both macOS (darwin-arm64) and Windows (win32-x64)
+- Comprehensive integration tests for both engines
+- Better documentation and code organization
 
 ## Contributing
 
@@ -447,12 +461,10 @@ dotnet build XsltDebugger.DebugAdapter/
 # Run tests
 dotnet test XsltDebugger.Tests/
 
-# Package for testing (platform-specific)
-./package-darwin.sh      # macOS
-./package-win.sh         # Windows
-
-# Or package universal (all platforms)
-npx vsce package
+# Package for testing
+./package-all.sh         # Build both macOS and Windows (recommended)
+./package-darwin.sh      # macOS only
+./package-win.sh         # Windows only
 ```
 
 ### Platform-Specific Packaging
@@ -461,10 +473,11 @@ The extension supports platform-specific packaging to reduce file size by includ
 
 #### Package Scripts
 
-| Script                                 | Platform | Extension Name         | Includes                |
-| -------------------------------------- | -------- | ---------------------- | ----------------------- |
-| [package-darwin.sh](package-darwin.sh) | macOS    | `xsltdebugger-darwin`  | osx-arm64 binaries only |
-| [package-win.sh](package-win.sh)       | Windows  | `xsltdebugger-windows` | win-x64 binaries only   |
+| Script                               | Platform        | Extension Name         | Includes                |
+| ------------------------------------ | --------------- | ---------------------- | ----------------------- |
+| [package-all.sh](package-all.sh)     | macOS + Windows | Both platforms         | Builds both packages    |
+| [package-darwin.sh](package-darwin.sh) | macOS         | `xsltdebugger-darwin`  | osx-arm64 binaries only |
+| [package-win.sh](package-win.sh)     | Windows         | `xsltdebugger-windows` | win-x64 binaries only   |
 
 #### How It Works
 
@@ -478,13 +491,12 @@ Each packaging script:
 #### Publishing to Marketplace
 
 ```bash
-# Build platform-specific packages
-./package-darwin.sh
-./package-win.sh
+# Build both platform packages
+./package-all.sh
 
 # Publish each as a separate extension
-vsce publish -p YOUR_TOKEN --packagePath xsltdebugger-darwin-*.vsix
-vsce publish -p YOUR_TOKEN --packagePath xsltdebugger-windows-*.vsix
+vsce publish -p YOUR_TOKEN --packagePath xsltdebugger-darwin-darwin-arm64-0.5.0.vsix
+vsce publish -p YOUR_TOKEN --packagePath xsltdebugger-windows-win32-x64-0.5.0.vsix
 ```
 
 **Benefits:**
@@ -498,20 +510,27 @@ vsce publish -p YOUR_TOKEN --packagePath xsltdebugger-windows-*.vsix
 ### Project Structure
 
 ```
-
 XsltDebugger/
-├── src/ # TypeScript extension source
-│ ├── extension.ts # Main extension entry point
-│ └── test/ # Extension tests
-├── XsltDebugger.DebugAdapter/ # C# debug adapter
-│ ├── Program.cs # Debug adapter entry point
-│ ├── XsltDebugSession.cs # DAP implementation
-│ ├── CompiledEngine.cs # XSLT 1.0 engine
-│ ├── SaxonEngine.cs # XSLT 2.0/3.0 engine
-│ └── XsltInstrumenter.cs # Debugging instrumentation
-├── XsltDebugger.Tests/ # C# unit tests
-└── package.json # Extension manifest
-
+├── src/                           # TypeScript extension source
+│   ├── extension.ts               # Main extension entry point
+│   └── test/                      # Extension tests
+├── XsltDebugger.DebugAdapter/     # C# debug adapter
+│   ├── Program.cs                 # Debug adapter entry point
+│   ├── DapServer.cs               # DAP protocol implementation
+│   ├── XsltCompiledEngine.cs      # XSLT 1.0 engine with inline C#
+│   ├── SaxonEngine.cs             # XSLT 2.0/3.0 Saxon engine
+│   ├── CompiledMessageHandler.cs  # Message handling for compiled engine
+│   ├── SaxonDebugExtension.cs     # Debug extension for Saxon
+│   └── XsltEngineManager.cs       # Engine state management
+├── XsltDebugger.Tests/            # C# integration & unit tests (105 tests)
+│   ├── CompiledEngineIntegrationTests.cs
+│   ├── SaxonEngineIntegrationTests.cs
+│   └── [other test files]
+├── XsltDebugger.ConsoleTest/      # Console test harness
+│   └── ProgramUsingEngineType.cs  # Unified engine testing
+├── TestData/                      # Centralized test data
+│   └── Integration/               # Integration test XSLT & XML files
+└── package.json                   # Extension manifest
 ```
 
 ## License
