@@ -14,24 +14,33 @@ public class XsltDebugExtension
         _stylesheetPath = stylesheetPath;
     }
 
-    public string Break(double lineNumber) => BreakInternal(lineNumber, null);
+    public string Break(double lineNumber) => BreakInternal(lineNumber, null, string.Empty);
 
-    public string Break(double lineNumber, XPathNodeIterator? context) => BreakInternal(lineNumber, context);
+    public string Break(double lineNumber, XPathNodeIterator? context) => BreakInternal(lineNumber, context, string.Empty);
+
+    public string Break(double lineNumber, XPathNodeIterator? context, string marker) => BreakInternal(lineNumber, context, marker);
 
     // XSLT invokes lowercase 'break' for extension functions; expose alias.
     public string @break(double lineNumber) => Break(lineNumber);
 
-    public string @break(double lineNumber, XPathNodeIterator? context) => BreakInternal(lineNumber, context);
+    public string @break(double lineNumber, XPathNodeIterator? context) => BreakInternal(lineNumber, context, string.Empty);
 
-    private string BreakInternal(double lineNumber, XPathNodeIterator? context)
+    public string @break(double lineNumber, XPathNodeIterator? context, string marker) => BreakInternal(lineNumber, context, marker);
+
+    private string BreakInternal(double lineNumber, XPathNodeIterator? context, string marker)
     {
         var line = (int)Math.Round(lineNumber);
         var navigator = ExtractNavigator(context);
 
+        // Parse marker to determine if this is template entry/exit
+        var isTemplateEntry = marker == "template-entry";
+        var isTemplateExit = marker == "template-exit";
+
         if (XsltEngineManager.IsTraceEnabled)
         {
             var nodeName = navigator?.Name ?? "(no context)";
-            XsltEngineManager.NotifyOutput($"[trace] Breakpoint hit at {_stylesheetPath}:{line}, context node: {nodeName}");
+            var markerText = string.IsNullOrEmpty(marker) ? "" : $" [{marker}]";
+            XsltEngineManager.NotifyOutput($"[trace] Breakpoint hit at {_stylesheetPath}:{line}{markerText}, context node: {nodeName}");
         }
 
         if (XsltEngineManager.IsTraceAllEnabled && navigator != null)
@@ -46,7 +55,7 @@ public class XsltDebugExtension
                 $"  Value: {(nodeValue.Length > 100 ? nodeValue.Substring(0, 100) + "..." : nodeValue)}");
         }
 
-        _engine.RegisterBreakpointHit(_stylesheetPath, line, navigator);
+        _engine.RegisterBreakpointHit(_stylesheetPath, line, navigator, isTemplateEntry, isTemplateExit);
         return string.Empty;
     }
 

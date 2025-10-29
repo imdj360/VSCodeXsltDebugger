@@ -19,6 +19,9 @@ public class SaxonEngine : IXsltEngine
     private TaskCompletionSource<bool>? _pauseTcs;
     private string _currentStylesheet = string.Empty;
     private bool _nextStepRequested;
+    private StepMode _stepMode = StepMode.Continue;
+    private int _callDepth = 0;
+    private int _targetDepth = 0;
     private Processor? _processor;
     private XsltTransformer? _transformer;
 
@@ -287,23 +290,46 @@ public class SaxonEngine : IXsltEngine
         lock (_sync)
         {
             _nextStepRequested = false;
+            _stepMode = StepMode.Continue;
             _pauseTcs?.TrySetResult(true);
             _pauseTcs = null;
         }
         return Task.CompletedTask;
     }
 
-    public Task StepOverAsync() => ResumeWithStepAsync();
-
-    public Task StepInAsync() => ResumeWithStepAsync();
-
-    public Task StepOutAsync() => ContinueAsync();
-
-    private Task ResumeWithStepAsync()
+    public Task StepOverAsync()
     {
         lock (_sync)
         {
             _nextStepRequested = true;
+            _stepMode = StepMode.Over;
+            _targetDepth = _callDepth;
+            _pauseTcs?.TrySetResult(true);
+            _pauseTcs = null;
+        }
+        return Task.CompletedTask;
+    }
+
+    public Task StepInAsync()
+    {
+        lock (_sync)
+        {
+            _nextStepRequested = true;
+            _stepMode = StepMode.Into;
+            _targetDepth = _callDepth;
+            _pauseTcs?.TrySetResult(true);
+            _pauseTcs = null;
+        }
+        return Task.CompletedTask;
+    }
+
+    public Task StepOutAsync()
+    {
+        lock (_sync)
+        {
+            _nextStepRequested = true;
+            _stepMode = StepMode.Out;
+            _targetDepth = _callDepth - 1; // Stop when we return to parent depth
             _pauseTcs?.TrySetResult(true);
             _pauseTcs = null;
         }
@@ -321,7 +347,7 @@ public class SaxonEngine : IXsltEngine
         _breakpoints = normalized;
     }
 
-    internal void RegisterBreakpointHit(string file, int line, XdmNode? contextNode = null)
+    internal void RegisterBreakpointHit(string file, int line, XdmNode? contextNode = null, bool isTemplateEntry = false, bool isTemplateExit = false)
     {
         if (line < 0)
         {
@@ -329,20 +355,66 @@ public class SaxonEngine : IXsltEngine
         }
 
         var normalized = NormalizePath(file);
-        var stepRequested = ConsumeStepRequest();
+
+        // Track call depth for template entry/exit
+        lock (_sync)
+        {
+            if (isTemplateEntry)
+            {
+                _callDepth++;
+            }
+            else if (isTemplateExit)
+            {
+                _callDepth--;
+            }
+        }
 
         // Always update the context for evaluation, even when not pausing
         UpdateContext(contextNode);
 
+        // Check if we hit a user-set breakpoint
         if (IsBreakpointHit(normalized, line))
         {
             PauseForBreakpoint(normalized, line, DebugStopReason.Breakpoint, contextNode);
             return;
         }
 
-        if (stepRequested)
+        // Check if we should stop based on step mode
+        if (ShouldStopForStep())
         {
             PauseForBreakpoint(normalized, line, DebugStopReason.Step, contextNode);
+        }
+    }
+
+    private bool ShouldStopForStep()
+    {
+        lock (_sync)
+        {
+            if (!_nextStepRequested)
+            {
+                return false;
+            }
+
+            switch (_stepMode)
+            {
+                case StepMode.Continue:
+                    return false;
+
+                case StepMode.Into:
+                    // Stop at any line (including deeper calls)
+                    return true;
+
+                case StepMode.Over:
+                    // Stop only at same depth or shallower
+                    return _callDepth <= _targetDepth;
+
+                case StepMode.Out:
+                    // Stop only when we've returned to a shallower depth
+                    return _callDepth <= _targetDepth;
+
+                default:
+                    return false;
+            }
         }
     }
 
@@ -549,18 +621,6 @@ public class SaxonEngine : IXsltEngine
         }
     }
 
-    private bool ConsumeStepRequest()
-    {
-        lock (_sync)
-        {
-            if (_nextStepRequested)
-            {
-                _nextStepRequested = false;
-                return true;
-            }
-        }
-        return false;
-    }
 
     private static string NormalizePath(string path)
     {
@@ -1025,10 +1085,19 @@ public class SaxonEngine : IXsltEngine
             }
         }
 
-        var breakProbe = new XElement(
-            xsltNamespace + "sequence",
-            new XAttribute("select", $"dbg:break({line}, .)"),
-            new XAttribute(debugNamespace + "probe", "1"));
+        // Check if this is a named template (for step-into support)
+        var isNamedTemplate = element.Name.Namespace == xsltNamespace &&
+                              string.Equals(element.Name.LocalName, "template", StringComparison.OrdinalIgnoreCase) &&
+                              element.Attribute("name") != null;
+
+        // Create breakpoint call with template-entry marker if it's a named template
+        var breakProbe = isNamedTemplate
+            ? new XElement(xsltNamespace + "sequence",
+                new XAttribute("select", $"dbg:break({line}, ., 'template-entry')"),
+                new XAttribute(debugNamespace + "probe", "1"))
+            : new XElement(xsltNamespace + "sequence",
+                new XAttribute("select", $"dbg:break({line}, .)"),
+                new XAttribute(debugNamespace + "probe", "1"));
         probes.Add(breakProbe);
 
         return probes;

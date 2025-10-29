@@ -28,12 +28,13 @@ public class SaxonDebugExtension : ExtensionFunctionDefinition
 
     public override int MinimumNumberOfArguments => 1;
 
-    public override int MaximumNumberOfArguments => 2;
+    public override int MaximumNumberOfArguments => 3;
 
     public override XdmSequenceType[] ArgumentTypes => new[]
     {
         new XdmSequenceType(XdmAtomicType.BuiltInAtomicType(QName.XS_DOUBLE), ' '),
-        new XdmSequenceType(XdmAnyNodeType.Instance, ' ')
+        new XdmSequenceType(XdmAnyNodeType.Instance, ' '),
+        new XdmSequenceType(XdmAtomicType.BuiltInAtomicType(QName.XS_STRING), '?')
     };
 
     public override XdmSequenceType ResultType(XdmSequenceType[] argumentTypes)
@@ -113,10 +114,26 @@ public class SaxonDebugExtensionCall : ExtensionFunctionCall
                 XsltEngineManager.NotifyOutput($"[trace] dbg:break only {arguments.Length} argument(s) at line {line}");
             }
 
+            // Extract marker argument (template-entry, template-exit, etc.)
+            var marker = string.Empty;
+            if (arguments.Length > 2)
+            {
+                var markerArg = arguments[2];
+                if (markerArg.MoveNext() && markerArg.Current is XdmAtomicValue markerValue)
+                {
+                    marker = markerValue.ToString();
+                }
+            }
+
+            // Parse marker to determine if this is template entry/exit
+            var isTemplateEntry = marker == "template-entry";
+            var isTemplateExit = marker == "template-exit";
+
             if (XsltEngineManager.IsTraceEnabled)
             {
                 var nodeName = contextNode?.NodeName?.LocalName ?? "(no context)";
-                XsltEngineManager.NotifyOutput($"[trace] Breakpoint hit at {_stylesheetPath}:{line}, context node: {nodeName}");
+                var markerText = string.IsNullOrEmpty(marker) ? "" : $" [{marker}]";
+                XsltEngineManager.NotifyOutput($"[trace] Breakpoint hit at {_stylesheetPath}:{line}{markerText}, context node: {nodeName}");
             }
 
             if (XsltEngineManager.IsTraceAllEnabled && contextNode != null)
@@ -130,7 +147,7 @@ public class SaxonDebugExtensionCall : ExtensionFunctionCall
                     $"  Value: {(nodeValue.Length > 100 ? nodeValue.Substring(0, 100) + "..." : nodeValue)}");
             }
 
-            _engine.RegisterBreakpointHit(_stylesheetPath, line, contextNode);
+            _engine.RegisterBreakpointHit(_stylesheetPath, line, contextNode, isTemplateEntry, isTemplateExit);
         }
 
         return EmptyEnumerator<XdmItem>.INSTANCE;

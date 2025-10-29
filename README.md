@@ -77,6 +77,16 @@ To keep it lightweight and predictable:
 - Trace logging introduces minor runtime overhead (up to ~15% in `traceall` mode).
 - Marketplace release is pending — available today via `.vsix` local install.
 
+**Debugging Capabilities Not Supported:**
+
+- **Step Back / Reverse Debugging**: Cannot step backward or rewind execution to previous lines
+- **Goto Targets**: Cannot jump execution to arbitrary lines or move the instruction pointer
+- **Set Variable**: Cannot modify variable values during debugging
+- **Conditional Breakpoints**: Breakpoints cannot have conditions or hit count filters
+- **Completions**: No autocomplete support in the debug console for XPath expressions
+
+**Note**: Step-into for `xsl:call-template` is fully supported. Use F11 to step into named templates.
+
 These tradeoffs ensure reliable, cross-platform debugging without slowing down transformations or overcomplicating the runtime.
 
 🧩 Note: This is a complementary developer tool intended for debugging and learning — not a production-grade runtime.
@@ -279,10 +289,16 @@ Create a `.vscode/launch.json` file in your project workspace:
 | Feature           | Description                                           | How to Use                                             |
 | ----------------- | ----------------------------------------------------- | ------------------------------------------------------ |
 | **Breakpoints**   | Pause execution at specific XSLT instructions         | Click in the gutter next to line numbers               |
-| **Stepping**      | Control execution flow                                | F10 (step over), F11 (step into), Shift+F11 (step out) |
+| **Stepping**      | Control execution flow with full step-into support    | F10 (step over), F11 (step into), Shift+F11 (step out) |
 | **Variables**     | Inspect context nodes, attributes, and XSLT variables | View in the Variables panel during debugging           |
 | **Watch**         | Monitor specific XPath expressions                    | Add expressions to the Watch panel                     |
 | **Debug Console** | Evaluate XPath expressions interactively              | Type XPath expressions in the Debug Console            |
+
+#### Stepping Features
+
+- **F11 (Step Into)**: Steps into `xsl:call-template` calls, allowing you to debug named templates
+- **F10 (Step Over)**: Executes the current line without stepping into template calls
+- **Shift+F11 (Step Out)**: Continues execution until returning from the current template
 
 #### Variable Inspection Notes
 
@@ -403,11 +419,21 @@ See the [CHANGELOG](CHANGELOG.md) for detailed version history.
 
 ### Latest Release: v0.5.0
 
+**Step-Into Debugging Enhancement**
+
+- Full support for stepping into named templates with `xsl:call-template`
+- F11 (Step Into) now correctly enters named templates with parameters
+- F10 (Step Over) executes template calls without stepping into them
+- Shift+F11 (Step Out) returns from the current template to the caller
+- Fixed template-entry breakpoint placement to respect XSLT 1.0 param ordering
+- Works with both Compiled engine (XSLT 1.0) and Saxon engine (XSLT 2.0/3.0)
+- Enhanced test coverage with 111 passing tests including step-into scenarios
+
 **Test Infrastructure & Code Quality Improvements**
 
 - Centralized test data to `TestData/Integration/` folder at repository root for better organization
 - All test projects now reference common test data location
-- Enhanced test coverage with 105 passing integration and unit tests
+- Enhanced test coverage with 111 passing integration and unit tests
 - Improved ConsoleTest project with unified engine support (both Compiled and Saxon)
 
 **Variable Debugging Enhancements**
@@ -416,6 +442,7 @@ See the [CHANGELOG](CHANGELOG.md) for detailed version history.
 - Improved variable capture and display in VS Code Variables panel
 - Better support for XSLT 2.0/3.0 variable debugging with Saxon engine
 - Added `CompiledMessageHandler` for enhanced compiled engine debugging
+- Fixed variable instrumentation to properly handle templates with parameters
 
 **Engine Improvements**
 
@@ -423,6 +450,7 @@ See the [CHANGELOG](CHANGELOG.md) for detailed version history.
 - Better breakpoint context information and handling
 - Enhanced xsl:message support for debugging output
 - Improved XSLT 2.0/3.0 features support including accumulators
+- Call depth tracking for proper step mode handling
 
 **Developer Experience**
 
