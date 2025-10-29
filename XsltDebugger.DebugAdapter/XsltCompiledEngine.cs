@@ -75,6 +75,10 @@ public class XsltCompiledEngine : IXsltEngine
     private StepMode _stepMode = StepMode.Continue;
     private int _callDepth = 0;
     private int _targetDepth = 0;
+    private string _currentStopFile = string.Empty;
+    private int _currentStopLine = -1;
+    private string _stepOriginFile = string.Empty;
+    private int _stepOriginLine = -1;
 
     public async Task StartAsync(string stylesheet, string xml, bool stopOnEntry)
     {
@@ -255,6 +259,8 @@ public class XsltCompiledEngine : IXsltEngine
             _nextStepRequested = true;
             _stepMode = StepMode.Over;
             _targetDepth = _callDepth;
+            _stepOriginFile = _currentStopFile;
+            _stepOriginLine = _currentStopLine;
             _pauseTcs?.TrySetResult(true);
             _pauseTcs = null;
         }
@@ -268,6 +274,8 @@ public class XsltCompiledEngine : IXsltEngine
             _nextStepRequested = true;
             _stepMode = StepMode.Into;
             _targetDepth = _callDepth;
+            _stepOriginFile = string.Empty;
+            _stepOriginLine = -1;
             _pauseTcs?.TrySetResult(true);
             _pauseTcs = null;
         }
@@ -281,6 +289,8 @@ public class XsltCompiledEngine : IXsltEngine
             _nextStepRequested = true;
             _stepMode = StepMode.Out;
             _targetDepth = _callDepth - 1; // Stop when we return to parent depth
+            _stepOriginFile = _currentStopFile;
+            _stepOriginLine = _currentStopLine;
             _pauseTcs?.TrySetResult(true);
             _pauseTcs = null;
         }
@@ -331,13 +341,13 @@ public class XsltCompiledEngine : IXsltEngine
         }
 
         // Check if we should stop based on step mode
-        if (ShouldStopForStep(isTemplateExit))
+        if (ShouldStopForStep(normalized, line, isTemplateExit))
         {
             PauseForBreakpoint(normalized, line, DebugStopReason.Step, contextNode);
         }
     }
 
-    private bool ShouldStopForStep(bool isTemplateExit)
+    private bool ShouldStopForStep(string file, int line, bool isTemplateExit)
     {
         lock (_sync)
         {
@@ -360,8 +370,9 @@ public class XsltCompiledEngine : IXsltEngine
                     break;
 
                 case StepMode.Over:
-                    // Stop once we return to the original depth (allow template exit to count)
-                    shouldStop = _callDepth <= _targetDepth;
+                    // Stop once we return to the original depth, but skip synthetic template exits
+                    shouldStop = !isTemplateExit && _callDepth <= _targetDepth &&
+                        (!string.Equals(file, _stepOriginFile, StringComparison.OrdinalIgnoreCase) || line != _stepOriginLine);
                     break;
 
                 case StepMode.Out:
@@ -410,6 +421,12 @@ public class XsltCompiledEngine : IXsltEngine
         }
 
         XsltEngineManager.NotifyStopped(file, line, reason, context);
+
+        lock (_sync)
+        {
+            _currentStopFile = file;
+            _currentStopLine = line;
+        }
 
         try
         {

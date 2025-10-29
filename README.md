@@ -106,10 +106,10 @@ These tradeoffs ensure reliable, cross-platform debugging without slowing down t
 
    ```bash
    # macOS
-   code --install-extension xsltdebugger-darwin-darwin-arm64-0.5.0.vsix
+   code --install-extension xsltdebugger-darwin-darwin-arm64-0.6.0.vsix
 
    # Windows
-   code --install-extension xsltdebugger-windows-win32-x64-0.5.0.vsix
+   code --install-extension xsltdebugger-windows-win32-x64-0.6.0.vsix
    ```
 
 2. **Create a debug configuration** in [.vscode/launch.json](#setting-up-a-debug-configuration)
@@ -138,7 +138,7 @@ These tradeoffs ensure reliable, cross-platform debugging without slowing down t
 
    ```bash
    ./package-all.sh
-   code --install-extension xsltdebugger-darwin-darwin-arm64-0.5.0.vsix
+   code --install-extension xsltdebugger-darwin-darwin-arm64-0.6.0.vsix
    ```
 
    **Platform-specific packaging** (build individually):
@@ -146,11 +146,11 @@ These tradeoffs ensure reliable, cross-platform debugging without slowing down t
    ```bash
    # For macOS only
    ./package-darwin.sh
-   code --install-extension xsltdebugger-darwin-darwin-arm64-0.5.0.vsix
+   code --install-extension xsltdebugger-darwin-darwin-arm64-0.6.0.vsix
 
    # For Windows only
    ./package-win.sh
-   code --install-extension xsltdebugger-windows-win32-x64-0.5.0.vsix
+   code --install-extension xsltdebugger-windows-win32-x64-0.6.0.vsix
    ```
 
 ## Usage
@@ -417,47 +417,31 @@ The workflow is split between a lightweight VS Code entry point and a .NET debu
 
 See the [CHANGELOG](CHANGELOG.md) for detailed version history.
 
-### Latest Release: v0.5.0
+### Latest Release: v0.6.0
 
-**Step-Into Debugging Enhancement**
+**Reliable Stepping Across Engines**
 
-- Full support for stepping into named templates with `xsl:call-template`
-- F11 (Step Into) now correctly enters named templates with parameters
-- F10 (Step Over) executes template calls without stepping into them
-- Shift+F11 (Step Out) returns from the current template to the caller
-- Fixed template-entry breakpoint placement to respect XSLT 1.0 param ordering
-- Works with both Compiled engine (XSLT 1.0) and Saxon engine (XSLT 2.0/3.0)
-- Enhanced test coverage with 111 passing tests including step-into scenarios
+- Step Over (F10) now stops on the statement after `xsl:call-template` for both compiled and Saxon engines.
+- Step Out (Shift+F11) returns to the caller template using call-depth tracking and template exit probes.
+- Step Into (F11) continues to enter named templates with parameter handling intact.
+- Template entry/exit markers are emitted consistently so the debugger never “falls through” a nested call.
 
-**Test Infrastructure & Code Quality Improvements**
+**Instrumentation Fixes**
 
-- Centralized test data to `TestData/Integration/` folder at repository root for better organization
-- All test projects now reference common test data location
-- Enhanced test coverage with 111 passing integration and unit tests
-- Improved ConsoleTest project with unified engine support (both Compiled and Saxon)
+- Saxon instrumentation always plants probes for `xsl:call-template`, even when a sibling probe already exists.
+- Named templates receive paired `template-entry`/`template-exit` instrumentation to keep call depth accurate.
+- Guardrails ensure synthetic exit hits do not trigger user breakpoints.
 
-**Variable Debugging Enhancements**
+**Console & Test Coverage**
 
-- Enhanced variable instrumentation for both Compiled and Saxon engines
-- Improved variable capture and display in VS Code Variables panel
-- Better support for XSLT 2.0/3.0 variable debugging with Saxon engine
-- Added `CompiledMessageHandler` for enhanced compiled engine debugging
-- Fixed variable instrumentation to properly handle templates with parameters
+- Interactive console harness (`XsltDebugger.ConsoleTest/StepIntoTest.cs`) highlights template entry/exit markers while you step.
+- Added dedicated `StepIntoTests` verifying step-in/over/out scenarios for both engines.
+- Test suite now covers 115 scenarios (all green with `dotnet test`).
 
-**Engine Improvements**
+**Packaging**
 
-- Unified console testing with `ProgramUsingEngineType.cs` supporting both engines
-- Better breakpoint context information and handling
-- Enhanced xsl:message support for debugging output
-- Improved XSLT 2.0/3.0 features support including accumulators
-- Call depth tracking for proper step mode handling
-
-**Developer Experience**
-
-- Platform-specific packaging with optimized binary sizes
-- Updated build scripts for both macOS (darwin-arm64) and Windows (win32-x64)
-- Comprehensive integration tests for both engines
-- Better documentation and code organization
+- Updated docs/scripts for the 0.6.0 VSIX names on macOS and Windows.
+- `package-darwin.sh`/`package-win.sh` continue to run tests before producing platform-specific bundles.
 
 ## Contributing
 
@@ -523,8 +507,8 @@ Each packaging script:
 ./package-all.sh
 
 # Publish each as a separate extension
-vsce publish -p YOUR_TOKEN --packagePath xsltdebugger-darwin-darwin-arm64-0.5.0.vsix
-vsce publish -p YOUR_TOKEN --packagePath xsltdebugger-windows-win32-x64-0.5.0.vsix
+vsce publish -p YOUR_TOKEN --packagePath xsltdebugger-darwin-darwin-arm64-0.6.0.vsix
+vsce publish -p YOUR_TOKEN --packagePath xsltdebugger-windows-win32-x64-0.6.0.vsix
 ```
 
 **Benefits:**
@@ -550,7 +534,7 @@ XsltDebugger/
 │   ├── CompiledMessageHandler.cs  # Message handling for compiled engine
 │   ├── SaxonDebugExtension.cs     # Debug extension for Saxon
 │   └── XsltEngineManager.cs       # Engine state management
-├── XsltDebugger.Tests/            # C# integration & unit tests (105 tests)
+├── XsltDebugger.Tests/            # C# integration & unit tests (115 tests)
 │   ├── CompiledEngineIntegrationTests.cs
 │   ├── SaxonEngineIntegrationTests.cs
 │   └── [other test files]
