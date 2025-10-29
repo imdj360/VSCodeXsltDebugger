@@ -11,6 +11,15 @@ namespace XsltDebugger.Tests;
 
 public class StepIntoTests
 {
+    private enum StepState
+    {
+        SeekCallSite,
+        SeekNestedEntry,
+        InsideNested,
+        AfterStep,
+        Completed
+    }
+
     private static string GetRepositoryRoot()
     {
         // From bin/Debug/net8.0, go up 4 levels to reach repository root
@@ -256,6 +265,141 @@ public class StepIntoTests
     }
 
     [Fact]
+    public async Task XsltCompiledEngine_StepOver_CallTemplate_ShouldPauseAfterReturn()
+    {
+        var xsltPath = GetTestDataPath("Integration/step-into-test.xslt");
+        var xmlPath = GetTestDataPath("Integration/step-into-test.xml");
+
+        var lines = File.ReadAllLines(xsltPath);
+        var callLine = Array.FindIndex(lines, line => line.Contains(@"<xsl:call-template name=""formatCurrency""", StringComparison.Ordinal)) + 1;
+        var afterCallLine = Array.FindIndex(lines, line => line.Contains(@"<xsl:text>Order processed</xsl:text>", StringComparison.Ordinal)) + 1;
+
+        callLine.Should().BeGreaterThan(0, "call-template line should exist in test stylesheet");
+        afterCallLine.Should().BeGreaterThan(0, "post-call line should exist in test stylesheet");
+
+        var engine = new XsltCompiledEngine();
+        var terminatedSource = new TaskCompletionSource<int>();
+        int? observedAfterCallLine = null;
+        var state = StepState.SeekCallSite;
+
+        XsltEngineManager.Reset();
+        XsltEngineManager.SetDebugFlags(true, LogLevel.Trace);
+
+        XsltEngineManager.EngineStopped += async (_, line, _) =>
+        {
+            switch (state)
+            {
+                case StepState.SeekCallSite:
+                    if (line == callLine)
+                    {
+                        state = StepState.AfterStep;
+                        await engine.StepOverAsync();
+                    }
+                    else
+                    {
+                        await engine.StepInAsync();
+                    }
+                    break;
+                case StepState.AfterStep:
+                    observedAfterCallLine = line;
+                    state = StepState.Completed;
+                    await engine.ContinueAsync();
+                    break;
+                default:
+                    await engine.ContinueAsync();
+                    break;
+            }
+        };
+
+        XsltEngineManager.EngineTerminated += code => terminatedSource.TrySetResult(code);
+
+        try
+        {
+            await engine.StartAsync(xsltPath, xmlPath, stopOnEntry: true);
+            var exitCode = await terminatedSource.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+            exitCode.Should().Be(0);
+            observedAfterCallLine.Should().NotBeNull("step-over should yield a stop after returning from nested template");
+            observedAfterCallLine.Should().NotBe(callLine, "step-over should advance past the call site");
+        }
+        finally
+        {
+            XsltEngineManager.Reset();
+        }
+    }
+
+    [Fact]
+    public async Task SaxonEngine_StepOver_CallTemplate_ShouldPauseAfterReturn()
+    {
+        var xsltPath = GetTestDataPath("Integration/step-into-test.xslt");
+        var xmlPath = GetTestDataPath("Integration/step-into-test.xml");
+
+        var lines = File.ReadAllLines(xsltPath);
+        var callLine = Array.FindIndex(lines, line => line.Contains(@"<xsl:call-template name=""formatCurrency""", StringComparison.Ordinal)) + 1;
+        var afterCallLine = Array.FindIndex(lines, line => line.Contains(@"<xsl:text>Order processed</xsl:text>", StringComparison.Ordinal)) + 1;
+
+        callLine.Should().BeGreaterThan(0, "call-template line should exist in test stylesheet");
+        afterCallLine.Should().BeGreaterThan(0, "post-call line should exist in test stylesheet");
+
+        var engine = new SaxonEngine();
+        var terminatedSource = new TaskCompletionSource<int>();
+        int? observedAfterCallLine = null;
+        var state = StepState.SeekCallSite;
+        var observedLines = new List<int>();
+
+        XsltEngineManager.Reset();
+        XsltEngineManager.SetDebugFlags(true, LogLevel.Trace);
+
+        XsltEngineManager.EngineStopped += async (_, line, _) =>
+        {
+            observedLines.Add(line);
+            switch (state)
+            {
+                case StepState.SeekCallSite:
+                    if (line == callLine)
+                    {
+                        state = StepState.AfterStep;
+                        await engine.StepOverAsync();
+                    }
+                    else
+                    {
+                        await engine.StepInAsync();
+                    }
+                    break;
+                case StepState.AfterStep:
+                    observedAfterCallLine = line;
+                    state = StepState.Completed;
+                    await engine.ContinueAsync();
+                    break;
+                default:
+                    await engine.ContinueAsync();
+                    break;
+            }
+        };
+
+        XsltEngineManager.EngineTerminated += code => terminatedSource.TrySetResult(code);
+
+        try
+        {
+            await engine.StartAsync(xsltPath, xmlPath, stopOnEntry: true);
+            var exitCode = await terminatedSource.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+            exitCode.Should().Be(0);
+
+            if (observedAfterCallLine == null)
+            {
+                throw new InvalidOperationException($"Saxon step-over did not pause again. Lines: {string.Join(",", observedLines)}");
+            }
+
+            observedAfterCallLine.Value.Should().NotBe(callLine, "step-over should advance past the call site");
+        }
+        finally
+        {
+            XsltEngineManager.Reset();
+        }
+    }
+
+    [Fact]
     public async Task CompiledEngine_StepOut_ShouldComplete()
     {
         // Arrange
@@ -364,4 +508,178 @@ public class StepIntoTests
             try { Directory.Delete(Path.GetDirectoryName(xsltPath)!, true); } catch { }
         }
     }
+
+    [Fact]
+    public async Task XsltCompiledEngine_StepOut_FromNestedTemplate_ShouldPauseAtCaller()
+    {
+        var xsltPath = GetTestDataPath("Integration/step-into-test.xslt");
+        var xmlPath = GetTestDataPath("Integration/step-into-test.xml");
+
+        var lines = File.ReadAllLines(xsltPath);
+        var callLine = Array.FindIndex(lines, line => line.Contains(@"<xsl:call-template name=""formatCurrency""", StringComparison.Ordinal)) + 1;
+        var nestedTemplateLine = Array.FindIndex(lines, line => line.Contains(@"<xsl:template name=""formatCurrency""", StringComparison.Ordinal)) + 1;
+        callLine.Should().BeGreaterThan(0);
+        nestedTemplateLine.Should().BeGreaterThan(0);
+
+        var engine = new XsltCompiledEngine();
+        var terminatedSource = new TaskCompletionSource<int>();
+        int? observedAfterStepOut = null;
+        var state = StepState.SeekCallSite;
+        var observedLines = new List<int>();
+
+        XsltEngineManager.Reset();
+        XsltEngineManager.SetDebugFlags(true, LogLevel.Trace);
+
+        XsltEngineManager.EngineStopped += async (_, line, _) =>
+        {
+            observedLines.Add(line);
+            switch (state)
+            {
+                case StepState.SeekCallSite:
+                    if (line == callLine)
+                    {
+                        state = StepState.SeekNestedEntry;
+                        await engine.StepInAsync();
+                    }
+                    else
+                    {
+                        await engine.StepInAsync();
+                    }
+                    break;
+                case StepState.SeekNestedEntry:
+                    if (line == callLine)
+                    {
+                        // We are at the call site, step into nested template
+                        state = StepState.SeekNestedEntry;
+                        await engine.StepInAsync();
+                    }
+                    else if (line == nestedTemplateLine)
+                    {
+                        state = StepState.InsideNested;
+                        await engine.StepInAsync();
+                    }
+                    else
+                    {
+                        await engine.StepInAsync();
+                    }
+                    break;
+                case StepState.InsideNested:
+                    state = StepState.AfterStep;
+                    await engine.StepOutAsync();
+                    break;
+                case StepState.AfterStep:
+                    observedAfterStepOut = line;
+                    state = StepState.Completed;
+                    await engine.ContinueAsync();
+                    break;
+                default:
+                    await engine.ContinueAsync();
+                    break;
+            }
+        };
+
+        XsltEngineManager.EngineTerminated += code => terminatedSource.TrySetResult(code);
+
+        try
+        {
+            await engine.StartAsync(xsltPath, xmlPath, stopOnEntry: true);
+            var exitCode = await terminatedSource.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+            exitCode.Should().Be(0);
+            observedAfterStepOut.Should().NotBeNull("step-out should yield a stop after climbing out of the nested template");
+        }
+        finally
+        {
+            XsltEngineManager.Reset();
+        }
+    }
+
+    [Fact]
+    public async Task SaxonEngine_StepOut_FromNestedTemplate_ShouldPauseAtCaller()
+    {
+        var xsltPath = GetTestDataPath("Integration/step-into-test.xslt");
+        var xmlPath = GetTestDataPath("Integration/step-into-test.xml");
+
+        var lines = File.ReadAllLines(xsltPath);
+        var callLine = Array.FindIndex(lines, line => line.Contains(@"<xsl:call-template name=""formatCurrency""", StringComparison.Ordinal)) + 1;
+        var nestedTemplateLine = Array.FindIndex(lines, line => line.Contains(@"<xsl:template name=""formatCurrency""", StringComparison.Ordinal)) + 1;
+        callLine.Should().BeGreaterThan(0);
+        nestedTemplateLine.Should().BeGreaterThan(0);
+
+        var engine = new SaxonEngine();
+        var terminatedSource = new TaskCompletionSource<int>();
+        int? observedAfterStepOut = null;
+        var state = StepState.SeekCallSite;
+        var observedLines = new List<int>();
+
+        XsltEngineManager.Reset();
+        XsltEngineManager.SetDebugFlags(true, LogLevel.Trace);
+
+        XsltEngineManager.EngineStopped += async (_, line, _) =>
+        {
+            observedLines.Add(line);
+            switch (state)
+            {
+                case StepState.SeekCallSite:
+                    if (line == callLine)
+                    {
+                        state = StepState.SeekNestedEntry;
+                        await engine.StepInAsync();
+                    }
+                    else
+                    {
+                        await engine.StepInAsync();
+                    }
+                    break;
+                case StepState.SeekNestedEntry:
+                    if (line == callLine)
+                    {
+                        state = StepState.SeekNestedEntry;
+                        await engine.StepInAsync();
+                    }
+                    else if (line == nestedTemplateLine)
+                    {
+                        state = StepState.InsideNested;
+                        await engine.StepInAsync();
+                    }
+                    else
+                    {
+                        await engine.StepInAsync();
+                    }
+                    break;
+                case StepState.InsideNested:
+                    state = StepState.AfterStep;
+                    await engine.StepOutAsync();
+                    break;
+                case StepState.AfterStep:
+                    observedAfterStepOut = line;
+                    state = StepState.Completed;
+                    await engine.ContinueAsync();
+                    break;
+                default:
+                    await engine.ContinueAsync();
+                    break;
+            }
+        };
+
+        XsltEngineManager.EngineTerminated += code => terminatedSource.TrySetResult(code);
+
+        try
+        {
+            await engine.StartAsync(xsltPath, xmlPath, stopOnEntry: true);
+            var exitCode = await terminatedSource.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+            exitCode.Should().Be(0);
+
+            if (observedAfterStepOut == null)
+            {
+                throw new InvalidOperationException($"Saxon step-out did not pause again. Lines: {string.Join(",", observedLines)}");
+            }
+        }
+        finally
+        {
+            XsltEngineManager.Reset();
+        }
+    }
+
 }

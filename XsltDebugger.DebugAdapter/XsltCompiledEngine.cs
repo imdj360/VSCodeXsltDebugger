@@ -316,7 +316,7 @@ public class XsltCompiledEngine : IXsltEngine
             }
             else if (isTemplateExit)
             {
-                _callDepth--;
+                _callDepth = Math.Max(0, _callDepth - 1);
             }
         }
 
@@ -324,20 +324,20 @@ public class XsltCompiledEngine : IXsltEngine
         XsltEngineManager.UpdateContext(contextNode);
 
         // Check if we hit a user-set breakpoint
-        if (IsBreakpointHit(normalized, line))
+        if (!isTemplateExit && IsBreakpointHit(normalized, line))
         {
             PauseForBreakpoint(normalized, line, DebugStopReason.Breakpoint, contextNode);
             return;
         }
 
         // Check if we should stop based on step mode
-        if (ShouldStopForStep())
+        if (ShouldStopForStep(isTemplateExit))
         {
             PauseForBreakpoint(normalized, line, DebugStopReason.Step, contextNode);
         }
     }
 
-    private bool ShouldStopForStep()
+    private bool ShouldStopForStep(bool isTemplateExit)
     {
         lock (_sync)
         {
@@ -346,26 +346,40 @@ public class XsltCompiledEngine : IXsltEngine
                 return false;
             }
 
+            var shouldStop = false;
+
             switch (_stepMode)
             {
                 case StepMode.Continue:
-                    return false;
+                    shouldStop = false;
+                    break;
 
                 case StepMode.Into:
                     // Stop at any line (including deeper calls)
-                    return true;
+                    shouldStop = !isTemplateExit;
+                    break;
 
                 case StepMode.Over:
-                    // Stop only at same depth or shallower
-                    return _callDepth <= _targetDepth;
+                    // Stop once we return to the original depth (allow template exit to count)
+                    shouldStop = _callDepth <= _targetDepth;
+                    break;
 
                 case StepMode.Out:
-                    // Stop only when we've returned to a shallower depth
-                    return _callDepth <= _targetDepth;
+                    // Stop when we've returned to or above the original depth (allow template exit to satisfy step out)
+                    shouldStop = _callDepth <= _targetDepth;
+                    break;
 
                 default:
-                    return false;
+                    shouldStop = false;
+                    break;
             }
+
+            if (shouldStop)
+            {
+                _nextStepRequested = false;
+            }
+
+            return shouldStop;
         }
     }
 
@@ -524,7 +538,35 @@ public class XsltCompiledEngine : IXsltEngine
             {
                 element.AddBeforeSelf(breakCall);
             }
+
+            if (isNamedTemplate)
+            {
+                EnsureTemplateExitBreakpoint(element, line!.Value, xsltNamespace);
+            }
         }
+    }
+
+    private static void EnsureTemplateExitBreakpoint(XElement templateElement, int lineNumber, XNamespace xsltNamespace)
+    {
+        var exitSelect = $"dbg:break({lineNumber}, ., 'template-exit')";
+
+        var existing = templateElement
+            .Elements()
+            .FirstOrDefault(e =>
+                e.Name.Namespace == xsltNamespace &&
+                string.Equals(e.Name.LocalName, "value-of", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(e.Attribute("select")?.Value, exitSelect, StringComparison.Ordinal));
+
+        if (existing != null)
+        {
+            return;
+        }
+
+        var exitCall = new XElement(
+            xsltNamespace + "value-of",
+            new XAttribute("select", exitSelect));
+
+        templateElement.Add(exitCall);
     }
 
     private static bool ShouldInstrument(XElement element, XNamespace xsltNamespace)
