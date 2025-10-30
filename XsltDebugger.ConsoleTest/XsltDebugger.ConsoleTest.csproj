@@ -20,8 +20,12 @@
   <ItemGroup>
     <Compile Remove="Program.cs" />
     <Compile Remove="ProgramWithInstrumentation.cs" />
+    <Compile Remove="ProgramUsingEngineType.cs" />
+    <Compile Remove="QuickStepTest.cs" />
     <None Include="Program.cs" />
     <None Include="ProgramWithInstrumentation.cs" />
+    <None Include="ProgramUsingEngineType.cs" />
+    <None Include="QuickStepTest.cs" />
   </ItemGroup>
 
 </Project>

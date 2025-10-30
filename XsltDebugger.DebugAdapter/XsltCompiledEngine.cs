@@ -14,6 +14,14 @@ using Saxon.Api;
 
 namespace XsltDebugger.DebugAdapter;
 
+internal enum StepMode
+{
+    Continue,   // No stepping, only break on breakpoints
+    Into,       // Step into templates/function calls
+    Over,       // Step over templates/function calls
+    Out         // Run until returning from current depth
+}
+
 public class XsltCompiledEngine : IXsltEngine
 {
     private const string DebugNamespace = "urn:xslt-debugger";
@@ -64,6 +72,13 @@ public class XsltCompiledEngine : IXsltEngine
     private TaskCompletionSource<bool>? _pauseTcs;
     private string _currentStylesheet = string.Empty;
     private bool _nextStepRequested;
+    private StepMode _stepMode = StepMode.Continue;
+    private int _callDepth = 0;
+    private int _targetDepth = 0;
+    private string _currentStopFile = string.Empty;
+    private int _currentStopLine = -1;
+    private string _stepOriginFile = string.Empty;
+    private int _stepOriginLine = -1;
 
     public async Task StartAsync(string stylesheet, string xml, bool stopOnEntry)
     {
@@ -230,23 +245,52 @@ public class XsltCompiledEngine : IXsltEngine
         lock (_sync)
         {
             _nextStepRequested = false;
+            _stepMode = StepMode.Continue;
             _pauseTcs?.TrySetResult(true);
             _pauseTcs = null;
         }
         return Task.CompletedTask;
     }
 
-    public Task StepOverAsync() => ResumeWithStepAsync();
-
-    public Task StepInAsync() => ResumeWithStepAsync();
-
-    public Task StepOutAsync() => ContinueAsync();
-
-    private Task ResumeWithStepAsync()
+    public Task StepOverAsync()
     {
         lock (_sync)
         {
             _nextStepRequested = true;
+            _stepMode = StepMode.Over;
+            _targetDepth = _callDepth;
+            _stepOriginFile = _currentStopFile;
+            _stepOriginLine = _currentStopLine;
+            _pauseTcs?.TrySetResult(true);
+            _pauseTcs = null;
+        }
+        return Task.CompletedTask;
+    }
+
+    public Task StepInAsync()
+    {
+        lock (_sync)
+        {
+            _nextStepRequested = true;
+            _stepMode = StepMode.Into;
+            _targetDepth = _callDepth;
+            _stepOriginFile = string.Empty;
+            _stepOriginLine = -1;
+            _pauseTcs?.TrySetResult(true);
+            _pauseTcs = null;
+        }
+        return Task.CompletedTask;
+    }
+
+    public Task StepOutAsync()
+    {
+        lock (_sync)
+        {
+            _nextStepRequested = true;
+            _stepMode = StepMode.Out;
+            _targetDepth = _callDepth - 1; // Stop when we return to parent depth
+            _stepOriginFile = _currentStopFile;
+            _stepOriginLine = _currentStopLine;
             _pauseTcs?.TrySetResult(true);
             _pauseTcs = null;
         }
@@ -264,7 +308,7 @@ public class XsltCompiledEngine : IXsltEngine
         _breakpoints = normalized;
     }
 
-    internal void RegisterBreakpointHit(string file, int line, XPathNavigator? contextNode = null)
+    internal void RegisterBreakpointHit(string file, int line, XPathNavigator? contextNode = null, bool isTemplateEntry = false, bool isTemplateExit = false)
     {
         if (line < 0)
         {
@@ -272,20 +316,81 @@ public class XsltCompiledEngine : IXsltEngine
         }
 
         var normalized = NormalizePath(file);
-        var stepRequested = ConsumeStepRequest();
+
+        // Track call depth for template entry/exit
+        lock (_sync)
+        {
+            if (isTemplateEntry)
+            {
+                _callDepth++;
+            }
+            else if (isTemplateExit)
+            {
+                _callDepth = Math.Max(0, _callDepth - 1);
+            }
+        }
 
         // Always update the context for evaluation, even when not pausing
         XsltEngineManager.UpdateContext(contextNode);
 
-        if (IsBreakpointHit(normalized, line))
+        // Check if we hit a user-set breakpoint
+        if (!isTemplateExit && IsBreakpointHit(normalized, line))
         {
             PauseForBreakpoint(normalized, line, DebugStopReason.Breakpoint, contextNode);
             return;
         }
 
-        if (stepRequested)
+        // Check if we should stop based on step mode
+        if (ShouldStopForStep(normalized, line, isTemplateExit))
         {
             PauseForBreakpoint(normalized, line, DebugStopReason.Step, contextNode);
+        }
+    }
+
+    private bool ShouldStopForStep(string file, int line, bool isTemplateExit)
+    {
+        lock (_sync)
+        {
+            if (!_nextStepRequested)
+            {
+                return false;
+            }
+
+            var shouldStop = false;
+
+            switch (_stepMode)
+            {
+                case StepMode.Continue:
+                    shouldStop = false;
+                    break;
+
+                case StepMode.Into:
+                    // Stop at any line (including deeper calls)
+                    shouldStop = !isTemplateExit;
+                    break;
+
+                case StepMode.Over:
+                    // Stop once we return to the original depth, but skip synthetic template exits
+                    shouldStop = !isTemplateExit && _callDepth <= _targetDepth &&
+                        (!string.Equals(file, _stepOriginFile, StringComparison.OrdinalIgnoreCase) || line != _stepOriginLine);
+                    break;
+
+                case StepMode.Out:
+                    // Stop when we've returned to or above the original depth (allow template exit to satisfy step out)
+                    shouldStop = _callDepth <= _targetDepth;
+                    break;
+
+                default:
+                    shouldStop = false;
+                    break;
+            }
+
+            if (shouldStop)
+            {
+                _nextStepRequested = false;
+            }
+
+            return shouldStop;
         }
     }
 
@@ -317,6 +422,12 @@ public class XsltCompiledEngine : IXsltEngine
 
         XsltEngineManager.NotifyStopped(file, line, reason, context);
 
+        lock (_sync)
+        {
+            _currentStopFile = file;
+            _currentStopLine = line;
+        }
+
         try
         {
             localTcs?.Task.Wait();
@@ -327,18 +438,6 @@ public class XsltCompiledEngine : IXsltEngine
         }
     }
 
-    private bool ConsumeStepRequest()
-    {
-        lock (_sync)
-        {
-            if (_nextStepRequested)
-            {
-                _nextStepRequested = false;
-                return true;
-            }
-        }
-        return false;
-    }
 
     private static string NormalizePath(string path)
     {
@@ -401,9 +500,18 @@ public class XsltCompiledEngine : IXsltEngine
             }
 
             var isXsltElement = element.Name.Namespace == xsltNamespace;
-            var breakCall = new XElement(
-                xsltNamespace + "value-of",
-                new XAttribute("select", $"dbg:break({line!.Value}, .)"));
+
+            // Check if this is a named template (for step-into support)
+            var isNamedTemplate = isXsltElement &&
+                                  string.Equals(element.Name.LocalName, "template", StringComparison.OrdinalIgnoreCase) &&
+                                  element.Attribute("name") != null;
+
+            // Create breakpoint call with template-entry marker if it's a named template
+            var breakCall = isNamedTemplate
+                ? new XElement(xsltNamespace + "value-of",
+                    new XAttribute("select", $"dbg:break({line!.Value}, ., 'template-entry')"))
+                : new XElement(xsltNamespace + "value-of",
+                    new XAttribute("select", $"dbg:break({line!.Value}, .)"));
 
             var parent = element.Parent;
             var parentIsXslt = parent?.Name.Namespace == xsltNamespace;
@@ -418,7 +526,28 @@ public class XsltCompiledEngine : IXsltEngine
                 continue;
             }
 
-            if (CanInsertAsFirstChild(element, isXsltElement))
+            // Special handling for named templates with params/variables
+            // In XSLT 1.0, ALL params and variables must come first
+            if (isNamedTemplate)
+            {
+                // Find the last param/variable in this template
+                var lastParamOrVar = element.Elements()
+                    .Where(e => e.Name.Namespace == xsltNamespace &&
+                               (e.Name.LocalName == "param" || e.Name.LocalName == "variable"))
+                    .LastOrDefault();
+
+                if (lastParamOrVar != null)
+                {
+                    // Insert the template-entry breakpoint AFTER all params/variables
+                    lastParamOrVar.AddAfterSelf(breakCall);
+                }
+                else
+                {
+                    // No params or variables, safe to insert as first child
+                    element.AddFirst(breakCall);
+                }
+            }
+            else if (CanInsertAsFirstChild(element, isXsltElement))
             {
                 element.AddFirst(breakCall);
             }
@@ -426,7 +555,35 @@ public class XsltCompiledEngine : IXsltEngine
             {
                 element.AddBeforeSelf(breakCall);
             }
+
+            if (isNamedTemplate)
+            {
+                EnsureTemplateExitBreakpoint(element, line!.Value, xsltNamespace);
+            }
         }
+    }
+
+    private static void EnsureTemplateExitBreakpoint(XElement templateElement, int lineNumber, XNamespace xsltNamespace)
+    {
+        var exitSelect = $"dbg:break({lineNumber}, ., 'template-exit')";
+
+        var existing = templateElement
+            .Elements()
+            .FirstOrDefault(e =>
+                e.Name.Namespace == xsltNamespace &&
+                string.Equals(e.Name.LocalName, "value-of", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(e.Attribute("select")?.Value, exitSelect, StringComparison.Ordinal));
+
+        if (existing != null)
+        {
+            return;
+        }
+
+        var exitCall = new XElement(
+            xsltNamespace + "value-of",
+            new XAttribute("select", exitSelect));
+
+        templateElement.Add(exitCall);
     }
 
     private static bool ShouldInstrument(XElement element, XNamespace xsltNamespace)
@@ -547,38 +704,66 @@ public class XsltCompiledEngine : IXsltEngine
             XsltEngineManager.NotifyOutput($"[debug] Instrumenting {variables.Count} variable(s) for debugging");
         }
 
-        foreach (var variable in variables)
+        // Group variables by parent to handle templates correctly
+        // In XSLT 1.0, ALL params and variables must come first in a template
+        var groupedByParent = variables.GroupBy(v => v.Parent).ToList();
+
+        foreach (var group in groupedByParent)
         {
-            var varName = variable.Attribute("name")?.Value;
-            if (string.IsNullOrEmpty(varName))
+            var parent = group.Key;
+            if (parent == null) continue;
+
+            // Collect safe variables in this group
+            var safeVars = new List<(XElement element, string name)>();
+            foreach (var variable in group)
             {
-                continue;
+                var varName = variable.Attribute("name")?.Value;
+                if (string.IsNullOrEmpty(varName))
+                {
+                    continue;
+                }
+
+                if (!IsSafeToInstrumentVariable(variable, xsltNamespace))
+                {
+                    if (XsltEngineManager.IsLogEnabled)
+                    {
+                        XsltEngineManager.NotifyOutput($"[debug]   Skipped unsafe instrumentation: ${varName}");
+                    }
+                    continue;
+                }
+
+                safeVars.Add((variable, varName));
             }
 
-            // GUARDRAILS: Check if it's safe to insert xsl:message after this variable
-            if (!IsSafeToInstrumentVariable(variable, xsltNamespace))
+            if (safeVars.Count == 0) continue;
+
+            // Find the last param/variable in this parent
+            // This ensures we insert AFTER all params/variables, not between them
+            var lastParamOrVar = parent.Elements()
+                .Where(e => e.Name.Namespace == xsltNamespace &&
+                           (e.Name.LocalName == "param" || e.Name.LocalName == "variable"))
+                .LastOrDefault();
+
+            if (lastParamOrVar == null) continue;
+
+            // Insert debug messages for each variable, but AFTER the last param/variable
+            foreach (var (variable, varName) in safeVars)
             {
+                var debugMessage = new XElement(
+                    xsltNamespace + "message",
+                    new XElement(xsltNamespace + "text", $"[DBG] {varName} "),
+                    new XElement(xsltNamespace + "value-of", new XAttribute("select", $"${varName}"))
+                );
+
+                // Insert after the last param/variable, not after each one
+                lastParamOrVar.AddAfterSelf(debugMessage);
+                // Update lastParamOrVar so next message goes after this one
+                lastParamOrVar = debugMessage;
+
                 if (XsltEngineManager.IsLogEnabled)
                 {
-                    XsltEngineManager.NotifyOutput($"[debug]   Skipped unsafe instrumentation: ${varName}");
+                    XsltEngineManager.NotifyOutput($"[debug]   Instrumented variable: ${varName}");
                 }
-                continue;
-            }
-
-            // Create debug message for XSLT 1.0: <xsl:message><xsl:text>[DBG] varName </xsl:text><xsl:value-of select="$varName"/></xsl:message>
-            // XSLT 1.0 doesn't support sequences in the same way as 2.0/3.0, so we use simple string conversion
-            var debugMessage = new XElement(
-                xsltNamespace + "message",
-                new XElement(xsltNamespace + "text", $"[DBG] {varName} "),
-                new XElement(xsltNamespace + "value-of", new XAttribute("select", $"${varName}"))
-            );
-
-            // Insert the message right after the variable declaration
-            variable.AddAfterSelf(debugMessage);
-
-            if (XsltEngineManager.IsLogEnabled)
-            {
-                XsltEngineManager.NotifyOutput($"[debug]   Instrumented variable: ${varName}");
             }
         }
     }

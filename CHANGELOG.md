@@ -2,6 +2,25 @@
 
 All notable changes to the XSLT Debugger extension will be documented in this file.
 
+## [0.6.0] - 2025
+
+### Added
+
+- Paired `template-entry`/`template-exit` instrumentation in both engines so call depth is tracked reliably.
+- Interactive console `StepIntoTest` highlights template markers while stepping through call-template scenarios.
+- Dedicated `StepIntoTests` suite covering step-into, step-over, and step-out flows for compiled and Saxon engines (115 tests total).
+
+### Changed
+
+- Step mode controller records the originating stop location to decide when `Step Over` and `Step Out` should halt.
+- Saxon instrumentation always emits probes for `xsl:call-template`, even when sibling probes exist, ensuring the line after the call is reachable.
+- Documentation references the 0.6.0 VSIX packages and explains the new stepping behaviour.
+
+### Fixed
+
+- `Step Over` no longer runs the Saxon engine to completion after an `xsl:call-template`; execution now pauses on the next statement.
+- `Step Out` consistently returns to the caller template thanks to call-depth unwinding and exit probes.
+
 ## [0.0.3] - 2025
 
 ### Fixed
