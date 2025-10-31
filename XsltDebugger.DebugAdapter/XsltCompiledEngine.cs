@@ -334,19 +334,20 @@ public class XsltCompiledEngine : IXsltEngine
         }
 
         // Always update the context for evaluation, even when not pausing
-        XsltEngineManager.UpdateContext(contextNode);
+        var clonedContext = CloneContextNavigator(contextNode);
+        XsltEngineManager.UpdateContext(clonedContext);
 
         // Check if we hit a user-set breakpoint
         if (!isTemplateExit && IsBreakpointHit(normalized, line))
         {
-            PauseForBreakpoint(normalized, line, DebugStopReason.Breakpoint, contextNode);
+            PauseForBreakpoint(normalized, line, DebugStopReason.Breakpoint, clonedContext);
             return;
         }
 
         // Check if we should stop based on step mode
         if (ShouldStopForStep(normalized, line, isTemplateExit))
         {
-            PauseForBreakpoint(normalized, line, DebugStopReason.Step, contextNode);
+            PauseForBreakpoint(normalized, line, DebugStopReason.Step, clonedContext);
         }
     }
 
@@ -626,6 +627,152 @@ public class XsltCompiledEngine : IXsltEngine
             new XAttribute("select", exitSelect));
 
         templateElement.Add(exitCall);
+    }
+
+    private static XPathNavigator? CloneContextNavigator(XPathNavigator? context)
+    {
+        if (context == null)
+        {
+            return null;
+        }
+
+        try
+        {
+            var originalClone = context.Clone();
+            var pathToContext = GetXPathToNavigator(originalClone);
+
+            // Move to the document root and capture the XML backing the navigator
+            originalClone.MoveToRoot();
+            if (!originalClone.MoveToFirstChild())
+            {
+                return context.Clone();
+            }
+
+            while (originalClone.NodeType != XPathNodeType.Element)
+            {
+                if (!originalClone.MoveToNext())
+                {
+                    return context.Clone();
+                }
+            }
+
+            var xml = originalClone.OuterXml;
+            var xmlDoc = new XmlDocument();
+            xmlDoc.LoadXml(xml);
+
+            var navigator = xmlDoc.CreateNavigator();
+            if (navigator == null)
+            {
+                return context.Clone();
+            }
+
+            if (!string.IsNullOrEmpty(pathToContext) && pathToContext != "/")
+            {
+                var nsManager = BuildNamespaceManager(xmlDoc);
+                var positioned = navigator.SelectSingleNode(pathToContext, nsManager);
+                if (positioned != null)
+                {
+                    return positioned.Clone();
+                }
+            }
+
+            return navigator;
+        }
+        catch
+        {
+            try
+            {
+                return context.Clone();
+            }
+            catch
+            {
+                return null;
+            }
+        }
+    }
+
+    private static XmlNamespaceManager BuildNamespaceManager(XmlDocument xmlDoc)
+    {
+        var manager = new XmlNamespaceManager(xmlDoc.NameTable);
+        if (xmlDoc.DocumentElement == null)
+        {
+            return manager;
+        }
+
+        try
+        {
+            var navigator = xmlDoc.CreateNavigator();
+            if (navigator != null && navigator.MoveToFirstChild())
+            {
+                foreach (var kvp in navigator.GetNamespacesInScope(XmlNamespaceScope.All))
+                {
+                    var prefix = kvp.Key ?? string.Empty;
+                    try { manager.AddNamespace(prefix, kvp.Value); }
+                    catch { /* ignore duplicates */ }
+                }
+            }
+        }
+        catch
+        {
+            // Ignore namespace extraction issues; fall back to empty manager
+        }
+
+        return manager;
+    }
+
+    private static string GetXPathToNavigator(XPathNavigator navigator)
+    {
+        try
+        {
+            var pathParts = new List<string>();
+            var current = navigator.Clone();
+
+            while (current.NodeType != XPathNodeType.Root)
+            {
+                switch (current.NodeType)
+                {
+                    case XPathNodeType.Element:
+                    {
+                        var position = 1;
+                        var sibling = current.Clone();
+                        while (sibling.MoveToPrevious())
+                        {
+                            if (sibling.Name == current.Name)
+                            {
+                                position++;
+                            }
+                        }
+
+                        pathParts.Insert(0, $"{current.Name}[{position}]");
+                        break;
+                    }
+                    case XPathNodeType.Attribute:
+                    {
+                        pathParts.Insert(0, $"@{current.Name}");
+                        break;
+                    }
+                    case XPathNodeType.Text:
+                    {
+                        pathParts.Insert(0, "text()");
+                        break;
+                    }
+                    default:
+                        pathParts.Insert(0, current.NodeType.ToString());
+                        break;
+                }
+
+                if (!current.MoveToParent())
+                {
+                    break;
+                }
+            }
+
+            return pathParts.Count > 0 ? "/" + string.Join("/", pathParts) : "/";
+        }
+        catch
+        {
+            return "/";
+        }
     }
 
     private static bool ShouldInstrument(XElement element, XNamespace xsltNamespace)
