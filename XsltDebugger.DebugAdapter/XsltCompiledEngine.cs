@@ -137,6 +137,9 @@ public class XsltCompiledEngine : IXsltEngine
                     return;
                 }
 
+                // Extract and register stylesheet namespaces for XPath evaluation in watch expressions
+                ExtractAndRegisterNamespaces(xdoc);
+
                 // XSLT 1.0 with XslCompiledTransform
                 XNamespace msxsl = "urn:schemas-microsoft-com:xslt";
                 var scripts = xdoc.Descendants(msxsl + "script").ToList();
@@ -451,6 +454,45 @@ public class XsltCompiledEngine : IXsltEngine
             try { result = Path.GetFullPath(result); } catch { }
         }
         return result;
+    }
+
+    private static void ExtractAndRegisterNamespaces(XDocument xdoc)
+    {
+        if (xdoc.Root == null)
+        {
+            return;
+        }
+
+        var namespaces = new Dictionary<string, string>();
+
+        // Extract all namespace declarations from the root element
+        foreach (var attr in xdoc.Root.Attributes())
+        {
+            if (attr.IsNamespaceDeclaration)
+            {
+                var prefix = attr.Name.LocalName == "xmlns" ? string.Empty : attr.Name.LocalName;
+                var uri = attr.Value;
+
+                // Skip XSLT namespace and debug namespace
+                if (uri != "http://www.w3.org/1999/XSL/Transform" &&
+                    uri != DebugNamespace)
+                {
+                    // For default namespace (no prefix), also register with "default" prefix
+                    // This allows XPath expressions to use "default:ElementName" syntax
+                    if (string.IsNullOrEmpty(prefix))
+                    {
+                        namespaces[prefix] = uri;
+                        namespaces["default"] = uri;
+                    }
+                    else
+                    {
+                        namespaces[prefix] = uri;
+                    }
+                }
+            }
+        }
+
+        XsltEngineManager.RegisterStylesheetNamespaces(namespaces);
     }
 
     private void EnsureDebugNamespace(XDocument doc)

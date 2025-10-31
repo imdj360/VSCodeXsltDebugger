@@ -728,11 +728,29 @@ internal sealed class DapServer
     private static XmlNamespaceManager CreateNamespaceManager(XPathNavigator navigator)
     {
         var manager = new XmlNamespaceManager(navigator.NameTable);
+
+        // Add namespaces from the current XML context
         foreach (var kvp in navigator.GetNamespacesInScope(XmlNamespaceScope.All))
         {
             var prefix = string.IsNullOrEmpty(kvp.Key) ? string.Empty : kvp.Key;
             manager.AddNamespace(prefix, kvp.Value);
         }
+
+        // Add namespaces from the XSLT stylesheet
+        // These take precedence for XPath evaluation in watch expressions
+        foreach (var kvp in XsltEngineManager.StylesheetNamespaces)
+        {
+            try
+            {
+                // AddNamespace will update if prefix already exists
+                manager.AddNamespace(kvp.Key, kvp.Value);
+            }
+            catch
+            {
+                // Ignore errors from duplicate/invalid namespace registrations
+            }
+        }
+
         return manager;
     }
 

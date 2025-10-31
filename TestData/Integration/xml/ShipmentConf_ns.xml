@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ns0:ShipmentConfirmation xmlns:ns0="http://www.example.com/ShipmentConfv2">
+  <ns0:TransportTypeCode>TRUCK</ns0:TransportTypeCode>
+  <ns0:TransportTypeDescription>Truck</ns0:TransportTypeDescription>
+  <ns0:TransportMode>Road</ns0:TransportMode>
+  <ns0:Direction>Outbound</ns0:Direction>
+  <ns0:Reference>REF-REDACTED</ns0:Reference>
+  <ns0:Arrival>2025-07-15T08:30:00Z</ns0:Arrival>
+  <ns0:Departure>2025-07-15T10:45:00+02:00</ns0:Departure>
+  <ns0:LicensePlate>PLATE-REDACTED</ns0:LicensePlate>
+  <ns0:Net Currency="USD">12500.756</ns0:Net>
+  <ns0:Status>Approved</ns0:Status>
+
+  <ns0:Orders>
+    <ns0:Number>ORD-XXXX</ns0:Number>
+    <ns0:Date>2025-07-15T00:00:00</ns0:Date>
+    <ns0:CustomerCode>CUST-XXXX</ns0:CustomerCode>
+    <ns0:CustomerName>LogicApps - iPaaS Tool Helper</ns0:CustomerName>
+    <ns0:OrderItems>
+      <ns0:Sequence>10</ns0:Sequence>
+      <ns0:OperationName>Load truck</ns0:OperationName>
+      <ns0:OperationCode>LD</ns0:OperationCode>
+      <ns0:OperationReports>
+        <ns0:ReportInfo>
+          <ns0:OperationReportDate>2025-07-14T12:00:00</ns0:OperationReportDate>
+        </ns0:ReportInfo>
+        <ns0:ReportInfo>
+          <ns0:OperationReportDate>2025-07-13T09:00:00</ns0:OperationReportDate>
+        </ns0:ReportInfo>
+        <ns0:ReportInfo>
+          <ns0:OperationReportDate>2025-06-15T06:30:00</ns0:OperationReportDate>
+        </ns0:ReportInfo>
+      </ns0:OperationReports>
+    </ns0:OrderItems>
+
+    <ns0:OrderItems>
+      <ns0:Sequence>20</ns0:Sequence>
+      <ns0:OperationName>Second load</ns0:OperationName>
+      <ns0:OperationCode>LD2</ns0:OperationCode>
+      <ns0:OperationReports>
+        <ns0:ReportInfo>
+          <ns0:OperationReportDate>2023-07-12</ns0:OperationReportDate>
+        </ns0:ReportInfo>
+        <ns0:ReportInfo>
+          <ns0:OperationReportDate>2025-07-16T00:00:00</ns0:OperationReportDate>
+        </ns0:ReportInfo>
+      </ns0:OperationReports>
+    </ns0:OrderItems>
+  </ns0:Orders>
+</ns0:ShipmentConfirmation>

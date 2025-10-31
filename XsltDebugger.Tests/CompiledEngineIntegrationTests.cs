@@ -27,8 +27,8 @@ public class CompiledEngineIntegrationTests
     [Fact]
     public async Task CompiledEngine_ShouldTransformInlineScriptSample_WithTraceLogging()
     {
-        var stylesheetPath = GetTestDataPath("Integration/sample-inline-cs-with-usings.xslt");
-        var xmlPath = GetTestDataPath("Integration/sample-inline-cs-with-usings.xml");
+        var stylesheetPath = GetTestDataPath("Integration/xslt/v1/sample-inline-cs-with-usings.xslt");
+        var xmlPath = GetTestDataPath("Integration/xml/sample-inline-cs-with-usings.xml");
         var fullStylesheetPath = Path.GetFullPath(stylesheetPath);
         var fullXmlPath = Path.GetFullPath(xmlPath);
         var breakpoints = new[] { (fullStylesheetPath, 24) };
@@ -108,8 +108,8 @@ public class CompiledEngineIntegrationTests
     [Fact]
     public async Task CompiledEngine_ShouldCaptureVariablesAndHitBreakpoints()
     {
-        var stylesheetPath = GetTestDataPath("Integration/VariableLoggingSampleV1.xslt");
-        var xmlPath = GetTestDataPath("Integration/VariableLoggingSampleV1Input.xml");
+        var stylesheetPath = GetTestDataPath("Integration/xslt/v1/VariableLoggingSampleV1.xslt");
+        var xmlPath = GetTestDataPath("Integration/xml/VariableLoggingSampleV1Input.xml");
         var fullStylesheetPath = Path.GetFullPath(stylesheetPath);
         var fullXmlPath = Path.GetFullPath(xmlPath);
         var breakpoints = new[] { (fullStylesheetPath, 8) };

@@ -82,8 +82,8 @@ public class SaxonEngineIntegrationTests
     [Fact]
     public async Task SaxonEngine_ShouldCaptureVariablesAndHitBreakpoints()
     {
-        var stylesheetPath = GetTestDataPath("Integration/VariableLoggingSample.xslt");
-        var xmlPath = GetTestDataPath("Integration/ItemsSample.xml");
+        var stylesheetPath = GetTestDataPath("Integration/xslt/v2/VariableLoggingSample.xslt");
+        var xmlPath = GetTestDataPath("Integration/xml/ItemsSample.xml");
         var fullStylesheetPath = Path.GetFullPath(stylesheetPath);
         var fullXmlPath = Path.GetFullPath(xmlPath);
         var breakpoints = new[] { (fullStylesheetPath, 8) };
@@ -159,8 +159,8 @@ public class SaxonEngineIntegrationTests
     [Fact]
     public async Task SaxonEngine_ShouldReportCompilationErrors()
     {
-        var stylesheetPath = GetTestDataPath("Integration/InvalidFunctionCall.xslt");
-        var xmlPath = GetTestDataPath("Integration/ItemsSample.xml");
+        var stylesheetPath = GetTestDataPath("Integration/xslt/tests/InvalidFunctionCall.xslt");
+        var xmlPath = GetTestDataPath("Integration/xml/ItemsSample.xml");
         var fullStylesheetPath = Path.GetFullPath(stylesheetPath);
         var fullXmlPath = Path.GetFullPath(xmlPath);
         var engine = new SaxonEngine();
@@ -210,8 +210,8 @@ public class SaxonEngineIntegrationTests
     [Fact]
     public async Task SaxonEngine_ShouldTransformShipmentSample_WithTraceLogging()
     {
-        var stylesheetPath = GetTestDataPath("Integration/ShipmentConf3.xslt");
-        var xmlPath = GetTestDataPath("Integration/ShipmentConf-proper.xml");
+        var stylesheetPath = GetTestDataPath("Integration/xslt/v3/ShipmentConf3.xslt");
+        var xmlPath = GetTestDataPath("Integration/xml/ShipmentConf-proper.xml");
         var fullStylesheetPath = Path.GetFullPath(stylesheetPath);
         var fullXmlPath = Path.GetFullPath(xmlPath);
         var engine = new SaxonEngine();
@@ -264,8 +264,8 @@ public class SaxonEngineIntegrationTests
     [Fact]
     public async Task SaxonEngine_ShouldRespectVariableInstrumentationGuardrails()
     {
-        var stylesheetPath = GetTestDataPath("Integration/test-guardrails.xslt");
-        var xmlPath = GetTestDataPath("Integration/sample.xml");
+        var stylesheetPath = GetTestDataPath("Integration/xslt/tests/test-guardrails.xslt");
+        var xmlPath = GetTestDataPath("Integration/xml/sample.xml");
         var fullStylesheetPath = Path.GetFullPath(stylesheetPath);
         var fullXmlPath = Path.GetFullPath(xmlPath);
         var engine = new SaxonEngine();
@@ -321,7 +321,7 @@ public class SaxonEngineIntegrationTests
     [Fact]
     public async Task SaxonEngine_ShouldTransformAdvancedXslt2_WithInstrumentation()
     {
-        var (log, outFile, exitCode) = await RunSaxonAsync("Integration/AdvanceXslt2.xslt", "Integration/AdvanceFile.xml");
+        var (log, outFile, exitCode) = await RunSaxonAsync("Integration/xslt/v2/AdvanceXslt2.xslt", "Integration/xml/AdvanceFile.xml");
         try
         {
             exitCode.Should().Be(0);
@@ -344,7 +344,7 @@ public class SaxonEngineIntegrationTests
     [Fact]
     public async Task SaxonEngine_ShouldTransformAdvancedXslt3_WithAccumulatorInstrumentation()
     {
-        var (log, outFile, exitCode) = await RunSaxonAsync("Integration/AdvanceXslt3.xslt", "Integration/AdvanceFile.xml");
+        var (log, outFile, exitCode) = await RunSaxonAsync("Integration/xslt/v3/AdvanceXslt3.xslt", "Integration/xml/AdvanceFile.xml");
         try
         {
             exitCode.Should().Be(0);

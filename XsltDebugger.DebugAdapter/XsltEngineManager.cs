@@ -18,6 +18,9 @@ public static class XsltEngineManager
     // XSLT Variables storage
     public static Dictionary<string, object?> Variables { get; private set; } = new();
 
+    // XSLT Stylesheet namespaces (prefix -> URI mapping)
+    public static Dictionary<string, string> StylesheetNamespaces { get; private set; } = new();
+
     public static bool DebugEnabled { get; private set; } = true;
     public static LogLevel CurrentLogLevel { get; private set; } = LogLevel.Log;
 
@@ -104,6 +107,25 @@ public static class XsltEngineManager
         }
     }
 
+    public static void RegisterStylesheetNamespaces(Dictionary<string, string> namespaces)
+    {
+        StylesheetNamespaces = new Dictionary<string, string>(namespaces);
+        if (IsTraceEnabled)
+        {
+            var count = namespaces.Count;
+            NotifyOutput($"[trace] Registered {count} stylesheet namespace(s)");
+        }
+    }
+
+    public static void ClearStylesheetNamespaces()
+    {
+        StylesheetNamespaces.Clear();
+        if (IsTraceAllEnabled)
+        {
+            NotifyOutput("[traceall] Stylesheet namespaces cleared");
+        }
+    }
+
     private static string FormatValue(object? value)
     {
         if (value == null) return "null";
@@ -120,6 +142,7 @@ public static class XsltEngineManager
         DebugEnabled = true;
         CurrentLogLevel = LogLevel.Log;
         ClearVariables();
+        ClearStylesheetNamespaces();
     }
 }
 
