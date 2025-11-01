@@ -19,7 +19,7 @@ The debug adapter implements the Debug Adapter Protocol (DAP) to enable debuggin
 - **`Program.cs`**: Entry point for the debug adapter
 - **`XsltDebugSession.cs`**: Main DAP session handler
 - **`CompiledEngine.cs`**: XSLT 1.0 engine with inline C# support
-- **`SaxonEngine.cs`**: XSLT 2.0/3.0 engine using Saxon .NET
+- **`SaxonEngine.cs`**: XSLT 1.0/2.0/3.0 engine using Saxon .NET
 - **`XsltInstrumenter.cs`**: Injects debugging hooks into XSLT stylesheets
 
 ### Features
@@ -31,7 +31,7 @@ The debug adapter implements the Debug Adapter Protocol (DAP) to enable debuggin
 - **Inline C# Scripting**: Compile and execute inline C# code in XSLT via `msxsl:script`
 - **Multiple Engines**:
   - Compiled engine for XSLT 1.0 with inline C# support
-  - Saxon .NET engine for XSLT 2.0/3.0 support
+  - Saxon .NET engine for XSLT 1.0/2.0/3.0 support
 - **Instrumentation**: Dynamic XSLT modification for debug hooks
 
 ## Building
@@ -73,7 +73,7 @@ dotnet test ../XsltDebugger.Tests/XsltDebugger.Tests.csproj
 ## Dependencies
 
 - **Microsoft.CSharp**: For Roslyn C# compilation (inline scripts)
-- **SaxonHE10Net31Api**: Saxon .NET XSLT 2.0/3.0 processor (community IKVM build)
+- **SaxonHE10Net31Api**: Saxon .NET XSLT 1.0/2.0/3.0 processor (community IKVM build)
 - **System.Xml**: For XSLT 1.0 processing
 
 ## Protocol Support

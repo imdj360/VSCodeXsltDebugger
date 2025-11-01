@@ -70,8 +70,8 @@ class ProgramUsingEngineType
             }
 
             // Enable debugging with log level
-            XsltEngineManager.SetDebugFlags(debug: true, LogLevel.TraceAll);
-            Console.WriteLine("   >> Debugging ENABLED (TraceAll)\n");
+            XsltEngineManager.SetDebugFlags(debug: true, LogLevel.Log);
+            Console.WriteLine("   >> Debugging ENABLED (Log)\n");
 
             // Set breakpoint - detect which file and set appropriate line
             var fullStylesheetPath = Path.GetFullPath(stylesheetPath);
