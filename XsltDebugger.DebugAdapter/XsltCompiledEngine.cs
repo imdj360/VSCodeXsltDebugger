@@ -185,6 +185,16 @@ public class XsltCompiledEngine : IXsltEngine
                 InstrumentStylesheet(xdoc);
                 InstrumentVariables(xdoc);
 
+                // DEBUG: Save instrumented XSLT for inspection
+                if (XsltEngineManager.IsTraceEnabled)
+                {
+                    var debugPath = Path.Combine(Path.GetDirectoryName(_currentStylesheet) ?? ".", "out",
+                        Path.GetFileNameWithoutExtension(_currentStylesheet) + ".instrumented.xslt");
+                    Directory.CreateDirectory(Path.GetDirectoryName(debugPath) ?? ".");
+                    xdoc.Save(debugPath);
+                    XsltEngineManager.NotifyOutput($"[trace] Saved instrumented XSLT to: {debugPath}");
+                }
+
                 var settings = new XsltSettings(enableDocumentFunction: false, enableScript: false);
                 args.AddExtensionObject(DebugNamespace, new XsltDebugExtension(this, _currentStylesheet));
 
@@ -336,6 +346,9 @@ public class XsltCompiledEngine : IXsltEngine
         // Always update the context for evaluation, even when not pausing
         var clonedContext = CloneContextNavigator(contextNode);
         XsltEngineManager.UpdateContext(clonedContext);
+
+        // Track current line for inline C# method logging
+        XsltEngineManager.UpdateCurrentLine(normalized, line);
 
         // Check if we hit a user-set breakpoint
         if (!isTemplateExit && IsBreakpointHit(normalized, line))
@@ -543,10 +556,14 @@ public class XsltCompiledEngine : IXsltEngine
             }
 
             var isXsltElement = element.Name.Namespace == xsltNamespace;
+            var localName = element.Name.LocalName;
+
+            // Check if this is a for-each element (needs special position logging)
+            var isForEach = isXsltElement && string.Equals(localName, "for-each", StringComparison.OrdinalIgnoreCase);
 
             // Check if this is a named template (for step-into support)
             var isNamedTemplate = isXsltElement &&
-                                  string.Equals(element.Name.LocalName, "template", StringComparison.OrdinalIgnoreCase) &&
+                                  string.Equals(localName, "template", StringComparison.OrdinalIgnoreCase) &&
                                   element.Attribute("name") != null;
 
             // Create breakpoint call with template-entry marker if it's a named template
@@ -555,6 +572,20 @@ public class XsltCompiledEngine : IXsltEngine
                     new XAttribute("select", $"dbg:break({line!.Value}, ., 'template-entry')"))
                 : new XElement(xsltNamespace + "value-of",
                     new XAttribute("select", $"dbg:break({line!.Value}, .)"));
+
+            // Create for-each position logging message (XSLT 1.0 compatible)
+            XElement? forEachMessage = null;
+            if (isForEach)
+            {
+                var selectAttr = element.Attribute("select")?.Value ?? "(none)";
+
+                // XSLT 1.0 compatible: use xsl:text and xsl:value-of inside xsl:message
+                // Cannot use 'select' attribute on xsl:message in XSLT 1.0 (only available in XSLT 3.0)
+                forEachMessage = new XElement(xsltNamespace + "message",
+                    new XElement(xsltNamespace + "text", $"[DBG] for-each line={line!.Value} select={selectAttr} pos="),
+                    new XElement(xsltNamespace + "value-of", new XAttribute("select", "position()"))
+                );
+            }
 
             var parent = element.Parent;
             var parentIsXslt = parent?.Name.Namespace == xsltNamespace;
@@ -569,9 +600,44 @@ public class XsltCompiledEngine : IXsltEngine
                 continue;
             }
 
+            // Special handling for for-each elements
+            // Must insert AFTER any xsl:sort elements
+            if (isForEach)
+            {
+                // Find the last xsl:sort element
+                var lastSort = element.Elements()
+                    .Where(e => e.Name.Namespace == xsltNamespace &&
+                               string.Equals(e.Name.LocalName, "sort", StringComparison.OrdinalIgnoreCase))
+                    .LastOrDefault();
+
+                if (lastSort != null)
+                {
+                    // Insert after the last sort
+                    // AddAfterSelf inserts immediately after, so we add in reverse order
+                    // Want: <sort/> <breakCall/> <message/>
+                    // So: add message first (goes after sort), then add breakCall (goes between sort and message)
+                    if (forEachMessage != null)
+                    {
+                        lastSort.AddAfterSelf(forEachMessage);
+                    }
+                    lastSort.AddAfterSelf(breakCall);
+                }
+                else
+                {
+                    // No sorts, insert as first child
+                    // AddFirst inserts at position 0, so we add in reverse order
+                    // Want: <breakCall/> <message/>
+                    // So: add message first (position 0), then breakCall (new position 0, pushing message to 1)
+                    if (forEachMessage != null)
+                    {
+                        element.AddFirst(forEachMessage);
+                    }
+                    element.AddFirst(breakCall);
+                }
+            }
             // Special handling for named templates with params/variables
             // In XSLT 1.0, ALL params and variables must come first
-            if (isNamedTemplate)
+            else if (isNamedTemplate)
             {
                 // Find the last param/variable in this template
                 var lastParamOrVar = element.Elements()
@@ -798,6 +864,8 @@ public class XsltCompiledEngine : IXsltEngine
                 "param" or "variable" or "with-param" => false,
                 // Exclude xsl:message to avoid instrumentation conflicts
                 "message" => false,
+                // Exclude xsl:sort because it must be the first child of xsl:for-each
+                "sort" => false,
                 _ => true
             };
         }
@@ -1064,7 +1132,9 @@ public class XsltCompiledEngine : IXsltEngine
             "using System.Text;",
             "using System.Xml;",
             "using System.Xml.XPath;",
-            "using System.Xml.Xsl;"
+            "using System.Xml.Xsl;",
+            "using XsltDebugger.DebugAdapter;",
+            "using static XsltDebugger.DebugAdapter.InlineXsltLogger;"
         };
 
         var existingUsings = ExtractUsingStatements(classCode);
@@ -1072,14 +1142,34 @@ public class XsltCompiledEngine : IXsltEngine
             requiredUsings.Where(u => !existingUsings.Contains(u, StringComparer.OrdinalIgnoreCase)));
 
         var sourceCode = string.Concat(prelude, Environment.NewLine, classCode);
+
+        // Instrument inline C# methods when debugging is enabled
+        if (XsltEngineManager.DebugEnabled)
+        {
+            sourceCode = InlineCSharpInstrumenter.Instrument(sourceCode);
+        }
+
         var syntaxTree = Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText(sourceCode);
         var references = new List<MetadataReference>
         {
             MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
             MetadataReference.CreateFromFile(typeof(XsltArgumentList).Assembly.Location),
             MetadataReference.CreateFromFile(typeof(System.Xml.XmlDocument).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(System.Linq.Enumerable).Assembly.Location)
+            MetadataReference.CreateFromFile(typeof(System.Linq.Enumerable).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(System.Runtime.GCSettings).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(XsltEngineManager).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(InlineXsltLogger).Assembly.Location)
         };
+
+        var coreLibDirectory = Path.GetDirectoryName(typeof(object).Assembly.Location);
+        if (!string.IsNullOrEmpty(coreLibDirectory))
+        {
+            var runtimeAssemblyPath = Path.Combine(coreLibDirectory, "System.Runtime.dll");
+            if (File.Exists(runtimeAssemblyPath))
+            {
+                references.Add(MetadataReference.CreateFromFile(runtimeAssemblyPath));
+            }
+        }
         var compilation = Microsoft.CodeAnalysis.CSharp.CSharpCompilation.Create(
             "InlineXsltExtAssembly",
             new[] { syntaxTree },
@@ -1095,18 +1185,22 @@ public class XsltCompiledEngine : IXsltEngine
 
         ms.Seek(0, SeekOrigin.Begin);
         var assembly = Assembly.Load(ms.ToArray());
-        Type? chosen = null;
-        foreach (var t in assembly.GetTypes())
-        {
-            var methods = t.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly);
-            if (methods.Length > 0)
-            {
-                chosen = t;
-                break;
-            }
-        }
+        var allTypes = assembly.GetTypes();
+        var usableTypes = allTypes
+            .Where(t =>
+                !t.IsAbstract &&
+                !t.IsInterface &&
+                !t.IsGenericType &&
+                !t.IsGenericTypeDefinition &&
+                !Attribute.IsDefined(t, typeof(System.Runtime.CompilerServices.CompilerGeneratedAttribute), inherit: false))
+            .ToList();
 
-        chosen ??= assembly.GetTypes().FirstOrDefault(t => !t.IsNested);
+        Type? chosen = usableTypes
+            .FirstOrDefault(t => t.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly).Length > 0)
+            ?? usableTypes.FirstOrDefault(t => !t.IsNested)
+            ?? usableTypes.FirstOrDefault()
+            ?? allTypes.FirstOrDefault(t => !t.IsAbstract && !t.IsInterface);
+
         if (chosen == null)
         {
             throw new Exception("Compiled assembly does not contain a usable type for XSLT extension.");

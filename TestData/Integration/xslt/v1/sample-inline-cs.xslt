@@ -6,7 +6,7 @@
   exclude-result-prefixes="msxsl user">
 
   <!-- Output formatting -->
-  <xsl:output method="xml" indent="yes" encoding="UTF-8"/>
+  <xsl:output method="xml" indent="yes" encoding="UTF-8" />
 
   <!-- Inline C# script block -->
   <msxsl:script language="C#" implements-prefix="user">
@@ -21,7 +21,7 @@
   <!-- Template that calls the C# function -->
   <xsl:template match="/root">
     <greeting>
-      <xsl:value-of select="user:SayHello()"/>
+      <xsl:value-of select="user:SayHello()" />
     </greeting>
   </xsl:template>
 

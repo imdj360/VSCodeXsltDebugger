@@ -76,6 +76,13 @@ public static class XsltEngineManager
         }
     }
 
+    public static void UpdateCurrentLine(string file, int line)
+    {
+        // Update LastStop to track the current executing line (not just when paused)
+        // This allows inline C# methods to report the XSLT line that called them
+        LastStop = (file, line);
+    }
+
     public static void NotifyOutput(string message)
     {
         if (!string.IsNullOrWhiteSpace(message))
