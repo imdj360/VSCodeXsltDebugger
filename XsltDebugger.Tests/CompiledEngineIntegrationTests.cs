@@ -27,7 +27,7 @@ public class CompiledEngineIntegrationTests
     [Fact]
     public async Task CompiledEngine_ShouldTransformInlineScriptSample_WithTraceLogging()
     {
-        var stylesheetPath = GetTestDataPath("Integration/xslt/v1/sample-inline-cs-with-usings.xslt");
+        var stylesheetPath = GetTestDataPath("Integration/xslt/compiled/sample-inline-cs-with-usings.xslt");
         var xmlPath = GetTestDataPath("Integration/xml/sample-inline-cs-with-usings.xml");
         var fullStylesheetPath = Path.GetFullPath(stylesheetPath);
         var fullXmlPath = Path.GetFullPath(xmlPath);
@@ -110,7 +110,7 @@ public class CompiledEngineIntegrationTests
     [Fact]
     public async Task CompiledEngine_ShouldCaptureVariablesAndHitBreakpoints()
     {
-        var stylesheetPath = GetTestDataPath("Integration/xslt/v1/VariableLoggingSampleV1.xslt");
+        var stylesheetPath = GetTestDataPath("Integration/xslt/compiled/VariableLoggingSampleV1.xslt");
         var xmlPath = GetTestDataPath("Integration/xml/VariableLoggingSampleV1Input.xml");
         var fullStylesheetPath = Path.GetFullPath(stylesheetPath);
         var fullXmlPath = Path.GetFullPath(xmlPath);
@@ -191,7 +191,7 @@ public class CompiledEngineIntegrationTests
     [Fact]
     public async Task CompiledEngine_ShouldInstrumentInlineCSharpMethods()
     {
-        var stylesheetPath = GetTestDataPath("Integration/xslt/v1/sample-inline-cs-auto-instrument.xslt");
+        var stylesheetPath = GetTestDataPath("Integration/xslt/compiled/sample-inline-cs-auto-instrument.xslt");
         var xmlPath = GetTestDataPath("Integration/xml/sample-inline-cs-auto-instrument.xml");
         var fullStylesheetPath = Path.GetFullPath(stylesheetPath);
         var fullXmlPath = Path.GetFullPath(xmlPath);
@@ -262,7 +262,7 @@ public class CompiledEngineIntegrationTests
     [Fact]
     public async Task CompiledEngine_ShouldIncludeXsltLineNumbersInInlineCSharpLogs()
     {
-        var stylesheetPath = GetTestDataPath("Integration/xslt/v1/ShipmentConfv1.xslt");
+        var stylesheetPath = GetTestDataPath("Integration/xslt/compiled/ShipmentConfv1.xslt");
         var xmlPath = GetTestDataPath("Integration/xml/ShipmentConf-proper.xml");
         var fullStylesheetPath = Path.GetFullPath(stylesheetPath);
         var fullXmlPath = Path.GetFullPath(xmlPath);
@@ -323,7 +323,7 @@ public class CompiledEngineIntegrationTests
     [Fact]
     public async Task CompiledEngine_ShouldNotDoubleInstrumentManuallyLoggedMethods()
     {
-        var stylesheetPath = GetTestDataPath("Integration/xslt/v1/sample-inline-cs-with-usings.xslt");
+        var stylesheetPath = GetTestDataPath("Integration/xslt/compiled/sample-inline-cs-with-usings.xslt");
         var xmlPath = GetTestDataPath("Integration/xml/sample-inline-cs-with-usings.xml");
         var fullStylesheetPath = Path.GetFullPath(stylesheetPath);
         var fullXmlPath = Path.GetFullPath(xmlPath);
@@ -382,7 +382,7 @@ public class CompiledEngineIntegrationTests
     [Fact]
     public async Task CompiledEngine_ShouldLogForEachPositionWithoutSort()
     {
-        var stylesheetPath = GetTestDataPath("Integration/xslt/v1/foreach-test.xslt");
+        var stylesheetPath = GetTestDataPath("Integration/xslt/compiled/foreach-test.xslt");
         var xmlPath = GetTestDataPath("Integration/xml/foreach-test.xml");
         var fullStylesheetPath = Path.GetFullPath(stylesheetPath);
         var fullXmlPath = Path.GetFullPath(xmlPath);
@@ -454,7 +454,7 @@ public class CompiledEngineIntegrationTests
     [Fact]
     public async Task CompiledEngine_ShouldLogForEachPositionWithSort()
     {
-        var stylesheetPath = GetTestDataPath("Integration/xslt/v1/foreach-test.xslt");
+        var stylesheetPath = GetTestDataPath("Integration/xslt/compiled/foreach-test.xslt");
         var xmlPath = GetTestDataPath("Integration/xml/foreach-test.xml");
         var fullStylesheetPath = Path.GetFullPath(stylesheetPath);
         var fullXmlPath = Path.GetFullPath(xmlPath);
@@ -517,7 +517,7 @@ public class CompiledEngineIntegrationTests
     [Fact]
     public async Task CompiledEngine_ShouldLogForEachInShipmentConfv1()
     {
-        var stylesheetPath = GetTestDataPath("Integration/xslt/v1/ShipmentConfv1.xslt");
+        var stylesheetPath = GetTestDataPath("Integration/xslt/compiled/ShipmentConfv1.xslt");
         var xmlPath = GetTestDataPath("Integration/xml/ShipmentConf-proper.xml");
         var fullStylesheetPath = Path.GetFullPath(stylesheetPath);
         var fullXmlPath = Path.GetFullPath(xmlPath);

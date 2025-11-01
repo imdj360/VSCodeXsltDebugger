@@ -8,25 +8,25 @@ A powerful Visual Studio Code extension that enables debugging support for XSLT 
 - **Variable Inspection**: Automatically materialises XSLT variables and context nodes inside VS Code’s VARIABLES pane
 - **XPath Evaluation**: Evaluate XPath expressions in the current context
 - **Inline C# Scripting**: Debug XSLT stylesheets with embedded C# code using Roslyn
-- **Multiple Engines**: Support for compiled XSLT engine (XSLT 1.0) and Saxon engine (XSLT 2.0/3.0)
+- **Multiple Engines**: Support for compiled XSLT engine (XSLT 1.0 + inline C#) and Saxon engine (XSLT 1.0 without `msxsl:script`, plus XSLT 2.0/3.0)
 - **Cross-Platform**: Works on Windows, macOS, and Linux
 - **Probe Tagging**: Instrumented breakpoints and trace messages are tagged with `dbg:probe="1"` so repeated runs stay idempotent
 
 ## XSLT Processing Engines
 
-| Feature           | Compiled Engine                  | Saxon .NET Engine                    |
-| ----------------- | -------------------------------- | ------------------------------------ |
-| **XSLT Version**  | 1.0                              | 2.0, 3.0                             |
-| **XPath Version** | 1.0                              | 2.0, 3.0                             |
-| **Special Features** | Inline C# via `msxsl:script`  | Full XSLT 2.0/3.0 features           |
-| **Best For**      | XSLT 1.0 with inline C#          | Modern XSLT 2.0/3.0 stylesheets      |
+| Feature           | Compiled Engine                  | Saxon .NET Engine                                    |
+| ----------------- | -------------------------------- | ---------------------------------------------------- |
+| **XSLT Version**  | 1.0                              | 1.0 (no inline C#), 2.0, 3.0                         |
+| **XPath Version** | 1.0                              | 2.0, 3.0                                             |
+| **Special Features** | Inline C# via `msxsl:script`  | Full XSLT 2.0/3.0 features, version-aware probes     |
+| **Best For**      | XSLT 1.0 with inline C#          | XSLT 1.0 without `msxsl:script`, plus 2.0/3.0 stylesheets |
 
-**Engine Selection**: Auto-detected based on XSLT version, or manually set with `"engine": "compiled"` or `"engine": "saxonnet"` in launch.json
+**Engine Selection**: Auto-detected based on XSLT version and inline script usage, or manually set with `"engine": "compiled"` or `"engine": "saxonnet"` in launch.json
 
 ### ⚠️ Current Limitations
 
 - Debugging focuses on basic XSLT structures (templates, loops, expressions); complex dynamic calls are not instrumented
-- Cannot step into inline C# scripts
+- Cannot step into inline C# scripts, though Roslyn instrumentation still logs entry parameters and return values to the console for visibility
 - Variable inspection uses "falldown" approach: variables are auto-captured via instrumentation as execution progresses forward (cannot re-run or step back to previous lines)
 - No support for: **step back**, goto targets, set variable, conditional breakpoints, or debug console autocomplete
 - Variable capture limited to `@select`-based variables; complex variables with content children may not be fully captured
@@ -49,10 +49,10 @@ A powerful Visual Studio Code extension that enables debugging support for XSLT 
 
    ```bash
    # macOS
-   code --install-extension xsltdebugger-darwin-darwin-arm64-0.6.0.vsix
+   code --install-extension xsltdebugger-darwin-darwin-arm64-1.0.0.vsix
 
    # Windows
-   code --install-extension xsltdebugger-windows-win32-x64-0.6.0.vsix
+   code --install-extension xsltdebugger-windows-win32-x64-1.0.0.vsix
    ```
 
 2. **Create a debug configuration** in [.vscode/launch.json](#setting-up-a-debug-configuration)
@@ -81,7 +81,7 @@ A powerful Visual Studio Code extension that enables debugging support for XSLT 
 
    ```bash
    ./package-all.sh
-   code --install-extension xsltdebugger-darwin-darwin-arm64-0.6.0.vsix
+   code --install-extension xsltdebugger-darwin-darwin-arm64-1.0.0.vsix
    ```
 
    **Platform-specific packaging** (build individually):
@@ -89,11 +89,11 @@ A powerful Visual Studio Code extension that enables debugging support for XSLT 
    ```bash
    # For macOS only
    ./package-darwin.sh
-   code --install-extension xsltdebugger-darwin-darwin-arm64-0.6.0.vsix
+   code --install-extension xsltdebugger-darwin-darwin-arm64-1.0.0.vsix
 
    # For Windows only
    ./package-win.sh
-   code --install-extension xsltdebugger-windows-win32-x64-0.6.0.vsix
+   code --install-extension xsltdebugger-windows-win32-x64-1.0.0.vsix
    ```
 
 ## Usage
@@ -202,7 +202,8 @@ Create a `.vscode/launch.json` file in your project workspace:
 - **Falldown Approach**: Variables appear in the Variables panel as execution flows forward past their declarations (not available before declaration)
 - **No Step Back**: Since variables are captured via forward instrumentation, you cannot step backward to re-inspect previous values
 - **XSLT 2.0/3.0**: Full support via Saxon engine with `@select`-based variable capture
-- **XSLT 1.0**: Limited variable inspection via Compiled engine
+- **XSLT 1.0 (no inline C#)**: Saxon engine reuses 1.0-safe probes (value-of/message) for equivalent capture behaviour
+- **XSLT 1.0 + inline C#**: Limited variable inspection via Compiled engine only
 
 ### Log Levels
 
@@ -254,7 +255,7 @@ The debugger supports XSLT stylesheets with embedded C# code using `msxsl:script
 
 - **Extension** ([src/extension.ts](src/extension.ts)): Registers debug type, resolves paths
 - **Adapter** ([XsltDebugger.DebugAdapter/](XsltDebugger.DebugAdapter/)): DAP server, engine management, breakpoint/stepping logic
-- **Engines**: `XsltCompiledEngine` (XSLT 1.0 + C#), `SaxonEngine` (XSLT 2.0/3.0)
+- **Engines**: `XsltCompiledEngine` (XSLT 1.0 + C#), `SaxonEngine` (XSLT 1.0 without `msxsl:script`, plus 2.0/3.0)
 - **Instrumentation**:
   - Breakpoints: Both engines inject `dbg:break()` extension function calls at breakpoint lines
   - Variables: Saxon engine injects `<xsl:message>` elements after variable declarations to auto-capture values

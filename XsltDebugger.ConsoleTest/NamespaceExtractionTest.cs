@@ -17,12 +17,12 @@ class NamespaceExtractionTest
 
         var testFiles = new[]
         {
-            "TestData/Integration/xslt/v3/LmlBasedXslt.xslt",
-            "TestData/Integration/xslt/v2/VariableLoggingSample.xslt",
-            "TestData/Integration/xslt/v1/VariableLoggingSampleV1.xslt",
-            "TestData/Integration/xslt/v2/AdvanceXslt2.xslt",
-            "TestData/Integration/xslt/v3/AdvanceXslt3.xslt",
-            "TestData/Integration/xslt/v3/ShipmentConf3.xslt"
+            "TestData/Integration/xslt/saxon/LmlBasedXslt.xslt",
+            "TestData/Integration/xslt/saxon/VariableLoggingSample.xslt",
+            "TestData/Integration/xslt/compiled/VariableLoggingSampleV1.xslt",
+            "TestData/Integration/xslt/saxon/AdvanceXslt2.xslt",
+            "TestData/Integration/xslt/saxon/AdvanceXslt3.xslt",
+            "TestData/Integration/xslt/saxon/ShipmentConf3.xslt"
         };
 
         foreach (var testFile in testFiles)

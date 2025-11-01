@@ -35,8 +35,8 @@ class ProgramUsingEngineType
 
         // Use different defaults based on engine type
         var defaultXslt = engineType == "compiled"
-            ? Path.Combine(DefaultTestDataFolder, "xslt/v1/sample-inline-cs-with-usings.xslt")
-            : Path.Combine(DefaultTestDataFolder, "xslt/v3/ShipmentConf3.xslt");
+            ? Path.Combine(DefaultTestDataFolder, "xslt/compiled/sample-inline-cs-with-usings.xslt")
+            : Path.Combine(DefaultTestDataFolder, "xslt/saxon/ShipmentConf3.xslt");
         var defaultXml = Path.Combine(DefaultTestDataFolder, engineType == "compiled" ? "xml/sample-inline-cs-with-usings.xml" : "xml/ShipmentConf-proper.xml");
 
         var stylesheetPath = ResolveInput(filteredArgs.ToArray(), 0, defaultXslt);

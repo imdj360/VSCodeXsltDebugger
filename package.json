@@ -2,7 +2,7 @@
   "name": "xsltdebugger-darwin",
   "displayName": "XSLT Debugger for macOS-arm64",
   "description": "A VS Code extension for debugging XSLT using a .NET Debug Adapter.",
-  "version": "0.7.0",
+  "version": "1.0.0",
   "publisher": "DanielJonathan",
   "repository": {
     "type": "git",

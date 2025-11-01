@@ -82,7 +82,7 @@ public class SaxonEngineIntegrationTests
     [Fact]
     public async Task SaxonEngine_ShouldCaptureVariablesAndHitBreakpoints()
     {
-        var stylesheetPath = GetTestDataPath("Integration/xslt/v2/VariableLoggingSample.xslt");
+        var stylesheetPath = GetTestDataPath("Integration/xslt/saxon/VariableLoggingSample.xslt");
         var xmlPath = GetTestDataPath("Integration/xml/ItemsSample.xml");
         var fullStylesheetPath = Path.GetFullPath(stylesheetPath);
         var fullXmlPath = Path.GetFullPath(xmlPath);
@@ -157,6 +157,80 @@ public class SaxonEngineIntegrationTests
     }
 
     [Fact]
+    public async Task SaxonEngine_ShouldCaptureVariables_WhenRunningXslt1Stylesheet()
+    {
+        var stylesheetPath = GetTestDataPath("Integration/xslt/compiled/VariableLoggingSampleV1.xslt");
+        var xmlPath = GetTestDataPath("Integration/xml/ItemsSample.xml");
+        var fullStylesheetPath = Path.GetFullPath(stylesheetPath);
+        var fullXmlPath = Path.GetFullPath(xmlPath);
+        var breakpoints = new[] { (fullStylesheetPath, 8) };
+
+        var engine = new SaxonEngine();
+        var outputLog = new List<string>();
+        var outputLock = new object();
+        var breakpointHitSource = new TaskCompletionSource<(string file, int line, DebugStopReason reason)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var terminatedSource = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        void OnOutput(string message)
+        {
+            lock (outputLock)
+            {
+                outputLog.Add(message);
+            }
+        }
+        void OnStopped(string file, int line, DebugStopReason reason)
+        {
+            breakpointHitSource.TrySetResult((file, line, reason));
+            _ = engine.ContinueAsync();
+        }
+        void OnTerminated(int code) => terminatedSource.TrySetResult(code);
+
+        XsltEngineManager.Reset();
+        XsltEngineManager.SetDebugFlags(true, LogLevel.TraceAll);
+        XsltEngineManager.EngineOutput += OnOutput;
+        XsltEngineManager.EngineStopped += OnStopped;
+        XsltEngineManager.EngineTerminated += OnTerminated;
+
+        try
+        {
+            engine.SetBreakpoints(breakpoints);
+            await engine.StartAsync(fullStylesheetPath, fullXmlPath, stopOnEntry: false);
+
+            var breakpointHit = await breakpointHitSource.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            breakpointHit.file.Should().Be(fullStylesheetPath);
+            breakpointHit.line.Should().Be(8);
+            breakpointHit.reason.Should().Be(DebugStopReason.Breakpoint);
+
+            var exitCode = await terminatedSource.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            exitCode.Should().Be(0, "successful transformation should terminate with 0 exit code");
+
+            XsltEngineManager.Variables.Should().ContainKey("count");
+            XsltEngineManager.Variables["count"].Should().Be("2");
+
+            XsltEngineManager.Variables.Should().ContainKey("firstName");
+            XsltEngineManager.Variables["firstName"].Should().Be("Alpha");
+
+            List<string> snapshot;
+            lock (outputLock)
+            {
+                snapshot = outputLog.ToList();
+            }
+
+            snapshot.Should().Contain(message => message.Contains("[debug] Instrumenting 2 variable", StringComparison.OrdinalIgnoreCase));
+            snapshot.Should().Contain(message => message.Contains("[debug]   Instrumented variable: $count", StringComparison.OrdinalIgnoreCase));
+            snapshot.Should().Contain(message => message.Contains("[debug]   Instrumented variable: $firstName", StringComparison.OrdinalIgnoreCase));
+            snapshot.Should().Contain(message => message.Contains("[DBG] count", StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            XsltEngineManager.EngineOutput -= OnOutput;
+            XsltEngineManager.EngineStopped -= OnStopped;
+            XsltEngineManager.EngineTerminated -= OnTerminated;
+            XsltEngineManager.Reset();
+        }
+    }
+
+    [Fact]
     public async Task SaxonEngine_ShouldReportCompilationErrors()
     {
         var stylesheetPath = GetTestDataPath("Integration/xslt/tests/InvalidFunctionCall.xslt");
@@ -210,7 +284,7 @@ public class SaxonEngineIntegrationTests
     [Fact]
     public async Task SaxonEngine_ShouldTransformShipmentSample_WithTraceLogging()
     {
-        var stylesheetPath = GetTestDataPath("Integration/xslt/v3/ShipmentConf3.xslt");
+        var stylesheetPath = GetTestDataPath("Integration/xslt/saxon/ShipmentConf3.xslt");
         var xmlPath = GetTestDataPath("Integration/xml/ShipmentConf-proper.xml");
         var fullStylesheetPath = Path.GetFullPath(stylesheetPath);
         var fullXmlPath = Path.GetFullPath(xmlPath);
@@ -321,7 +395,7 @@ public class SaxonEngineIntegrationTests
     [Fact]
     public async Task SaxonEngine_ShouldTransformAdvancedXslt2_WithInstrumentation()
     {
-        var (log, outFile, exitCode) = await RunSaxonAsync("Integration/xslt/v2/AdvanceXslt2.xslt", "Integration/xml/AdvanceFile.xml");
+        var (log, outFile, exitCode) = await RunSaxonAsync("Integration/xslt/saxon/AdvanceXslt2.xslt", "Integration/xml/AdvanceFile.xml");
         try
         {
             exitCode.Should().Be(0);
@@ -344,7 +418,7 @@ public class SaxonEngineIntegrationTests
     [Fact]
     public async Task SaxonEngine_ShouldTransformAdvancedXslt3_WithAccumulatorInstrumentation()
     {
-        var (log, outFile, exitCode) = await RunSaxonAsync("Integration/xslt/v3/AdvanceXslt3.xslt", "Integration/xml/AdvanceFile.xml");
+        var (log, outFile, exitCode) = await RunSaxonAsync("Integration/xslt/saxon/AdvanceXslt3.xslt", "Integration/xml/AdvanceFile.xml");
         try
         {
             exitCode.Should().Be(0);

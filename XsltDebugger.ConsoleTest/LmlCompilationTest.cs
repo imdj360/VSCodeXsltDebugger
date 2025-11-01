@@ -15,7 +15,7 @@ class LmlCompilationTest
     {
         Console.WriteLine("=== XSLT Compilation Test ===\n");
 
-        var stylesheetPath = Path.GetFullPath("TestData/Integration/xslt/v3/LmlBasedXslt.xslt");
+        var stylesheetPath = Path.GetFullPath("TestData/Integration/xslt/saxon/LmlBasedXslt.xslt");
         var xmlPath = Path.GetFullPath("TestData/Integration/xml/ShipmentConf-lml.xml");
 
         if (!File.Exists(stylesheetPath))

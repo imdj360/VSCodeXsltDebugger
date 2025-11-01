@@ -141,6 +141,8 @@ public class SaxonEngine : IXsltEngine
                     XsltEngineManager.NotifyOutput($"XSLT version detected: {version}");
                 }
 
+                var useXslt1Instrumentation = version < 2.0m;
+
                 // Enable debugging instrumentation only if debugging is enabled
                 if (XsltEngineManager.DebugEnabled)
                 {
@@ -153,11 +155,23 @@ public class SaxonEngine : IXsltEngine
                     _processor.RegisterExtensionFunction(debugExtension);
 
                     EnsureDebugNamespace(xdoc);
-                    InstrumentStylesheet(xdoc);
-                    InstrumentVariables(xdoc);
-                    if (XsltEngineManager.IsLogEnabled)
+                    if (useXslt1Instrumentation)
                     {
-                        XsltEngineManager.NotifyOutput("Debugging enabled for XSLT 2.0/3.0.");
+                        Xslt1Instrumentation.InstrumentStylesheet(xdoc, _currentStylesheet, DebugNamespace, addProbeAttribute: true);
+                        Xslt1Instrumentation.InstrumentVariables(xdoc, DebugNamespace, addProbeAttribute: true);
+                        if (XsltEngineManager.IsLogEnabled)
+                        {
+                            XsltEngineManager.NotifyOutput("Debugging enabled for XSLT 1.0 (Saxon instrumentation).");
+                        }
+                    }
+                    else
+                    {
+                        InstrumentStylesheet(xdoc);
+                        InstrumentVariables(xdoc);
+                        if (XsltEngineManager.IsLogEnabled)
+                        {
+                            XsltEngineManager.NotifyOutput("Debugging enabled for XSLT 2.0/3.0.");
+                        }
                     }
                 }
                 else
