@@ -1,12 +1,12 @@
 {
-  "name": "xsltdebugger-darwin",
-  "displayName": "XSLT Debugger for macOS-arm64",
+  "name": "xsltdebugger",
+  "displayName": "XSLT Debugger",
   "description": "A VS Code extension for debugging XSLT using a .NET Debug Adapter.",
   "version": "1.0.0",
   "publisher": "DanielJonathan",
   "repository": {
     "type": "git",
-    "url": "https://github.com/imdj360/XsltDebugger.git"
+    "url": "https://github.com/imdj360/VSCodeXsltDebugger.git"
   },
   "engines": {
     "vscode": "^1.105.0"
@@ -60,7 +60,7 @@
                 ],
                 "enumDescriptions": [
                   "XSLT 1.0 engine with inline C# support",
-                  "Saxon.NET engine for XSLT 2.0/3.0",
+                  "Saxon.NET engine for XSLT 1.0/2.0/3.0",
                   "Alias for saxonnet"
                 ],
                 "default": "compiled",
