@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ShipmentConfirmation>
+  <Reference>REF-12345</Reference>
+  <Net>1500.50</Net>
+  <LicensePlate>ABC-123</LicensePlate>
+  <Orders>
+    <Number>ORD-001</Number>
+    <CustomerName>Acme Corporation</CustomerName>
+    <Date>2025-10-31 14:30:00</Date>
+    <OrderItems>
+      <Sequence>1</Sequence>
+      <OperationCode>SHIP</OperationCode>
+    </OrderItems>
+    <OrderItems>
+      <Sequence>2</Sequence>
+      <OperationCode>LOAD</OperationCode>
+    </OrderItems>
+  </Orders>
+</ShipmentConfirmation>

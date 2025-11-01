@@ -131,12 +131,17 @@ public class SaxonEngine : IXsltEngine
                     return;
                 }
 
+                // Extract and register stylesheet namespaces for XPath evaluation in watch expressions
+                ExtractAndRegisterNamespaces(xdoc);
+
                 // Instrument the stylesheet for debugging
                 var version = XsltCompiledEngine.GetXsltVersion(xdoc.Root);
                 if (XsltEngineManager.IsLogEnabled)
                 {
                     XsltEngineManager.NotifyOutput($"XSLT version detected: {version}");
                 }
+
+                var useXslt1Instrumentation = version < 2.0m;
 
                 // Enable debugging instrumentation only if debugging is enabled
                 if (XsltEngineManager.DebugEnabled)
@@ -150,11 +155,23 @@ public class SaxonEngine : IXsltEngine
                     _processor.RegisterExtensionFunction(debugExtension);
 
                     EnsureDebugNamespace(xdoc);
-                    InstrumentStylesheet(xdoc);
-                    InstrumentVariables(xdoc);
-                    if (XsltEngineManager.IsLogEnabled)
+                    if (useXslt1Instrumentation)
                     {
-                        XsltEngineManager.NotifyOutput("Debugging enabled for XSLT 2.0/3.0.");
+                        Xslt1Instrumentation.InstrumentStylesheet(xdoc, _currentStylesheet, DebugNamespace, addProbeAttribute: true);
+                        Xslt1Instrumentation.InstrumentVariables(xdoc, DebugNamespace, addProbeAttribute: true);
+                        if (XsltEngineManager.IsLogEnabled)
+                        {
+                            XsltEngineManager.NotifyOutput("Debugging enabled for XSLT 1.0 (Saxon instrumentation).");
+                        }
+                    }
+                    else
+                    {
+                        InstrumentStylesheet(xdoc);
+                        InstrumentVariables(xdoc);
+                        if (XsltEngineManager.IsLogEnabled)
+                        {
+                            XsltEngineManager.NotifyOutput("Debugging enabled for XSLT 2.0/3.0.");
+                        }
                     }
                 }
                 else
@@ -487,21 +504,22 @@ public class SaxonEngine : IXsltEngine
                 xmlDoc.LoadXml(xmlString);
 
                 // Create navigator from the .NET XmlDocument
-                var navigator = xmlDoc.CreateNavigator();
+                var navigator = xmlDoc.CreateNavigator() ?? throw new InvalidOperationException("Failed to create XPath navigator for serialized Saxon context.");
 
                 // Now navigate to the equivalent position of the original context node
                 // We'll use the XPath to the original node to position the navigator correctly
                 var pathToContext = GetXPathToNode(context);
                 if (!string.IsNullOrEmpty(pathToContext) && pathToContext != "/")
                 {
-                    var contextNavigator = navigator.SelectSingleNode(pathToContext);
+                    var nsManager = BuildNamespaceManager(xmlDoc);
+                    var contextNavigator = navigator.SelectSingleNode(pathToContext, nsManager);
                     if (contextNavigator != null)
                     {
                         if (XsltEngineManager.TraceEnabled)
                         {
                             XsltEngineManager.NotifyOutput($"[trace] ConvertSaxonNodeToNavigator: positioned at {pathToContext}");
                         }
-                        return contextNavigator;
+                        return contextNavigator.Clone();
                     }
                 }
 
@@ -518,6 +536,35 @@ public class SaxonEngine : IXsltEngine
         }
     }
 
+    private static XmlNamespaceManager BuildNamespaceManager(XmlDocument xmlDoc)
+    {
+        var manager = new XmlNamespaceManager(xmlDoc.NameTable);
+        if (xmlDoc.DocumentElement == null)
+        {
+            return manager;
+        }
+
+        try
+        {
+            var navigator = xmlDoc.CreateNavigator();
+            if (navigator != null && navigator.MoveToFirstChild())
+            {
+                foreach (var kvp in navigator.GetNamespacesInScope(XmlNamespaceScope.All))
+                {
+                    var prefix = kvp.Key ?? string.Empty;
+                    try { manager.AddNamespace(prefix, kvp.Value); }
+                    catch { /* ignore duplicates */ }
+                }
+            }
+        }
+        catch
+        {
+            // Ignore namespace extraction issues; fall back to empty manager
+        }
+
+        return manager;
+    }
+
     private string GetXPathToNode(XdmNode node)
     {
         // Build the XPath to this node from the root
@@ -526,27 +573,31 @@ public class SaxonEngine : IXsltEngine
 
         while (current != null && current.NodeKind != XmlNodeType.Document)
         {
-            if (current.NodeKind == XmlNodeType.Element)
+            switch (current.NodeKind)
             {
-                var name = current.NodeName?.LocalName ?? "";
-                // Count preceding siblings with the same name for position predicate
-                var position = 1;
-                var sibling = current;
-
-                // Move to parent, then iterate children to find position
-                var parent = current.Parent as XdmNode;
-                if (parent != null)
+                case XmlNodeType.Element:
                 {
-                    var children = parent.Children().ToList();
-                    var index = 0;
-                    foreach (var child in children)
+                    var nodeName = current.NodeName;
+                    var localName = nodeName?.LocalName ?? string.Empty;
+                    var prefix = nodeName?.Prefix ?? string.Empty;
+                    var qualifiedName = string.IsNullOrEmpty(prefix) ? localName : $"{prefix}:{localName}";
+
+                    var position = 1;
+                    var parent = current.Parent as XdmNode;
+                    if (parent != null)
                     {
-                        if (child is XdmNode childNode && childNode.NodeKind == XmlNodeType.Element)
+                        var siblings = parent.Children().OfType<XdmNode>()
+                            .Where(child => child.NodeKind == XmlNodeType.Element)
+                            .ToList();
+
+                        var index = 0;
+                        foreach (var sibling in siblings)
                         {
-                            if (childNode.NodeName?.LocalName == name)
+                            var siblingName = sibling.NodeName;
+                            if (nodeName != null && nodeName.Equals(siblingName))
                             {
                                 index++;
-                                if (childNode.Implementation == current.Implementation)
+                                if (sibling.Implementation == current.Implementation)
                                 {
                                     position = index;
                                     break;
@@ -554,9 +605,27 @@ public class SaxonEngine : IXsltEngine
                             }
                         }
                     }
-                }
 
-                pathParts.Insert(0, $"{name}[{position}]");
+                    pathParts.Insert(0, $"{qualifiedName}[{position}]");
+                    break;
+                }
+                case XmlNodeType.Attribute:
+                {
+                    var nodeName = current.NodeName;
+                    var localName = nodeName?.LocalName ?? string.Empty;
+                    var prefix = nodeName?.Prefix ?? string.Empty;
+                    var qualifiedName = string.IsNullOrEmpty(prefix) ? localName : $"{prefix}:{localName}";
+                    pathParts.Insert(0, $"@{qualifiedName}");
+                    break;
+                }
+                case XmlNodeType.Text:
+                {
+                    pathParts.Insert(0, "text()");
+                    break;
+                }
+                default:
+                    pathParts.Insert(0, current.NodeKind.ToString());
+                    break;
             }
 
             current = current.Parent as XdmNode;
@@ -667,6 +736,45 @@ public class SaxonEngine : IXsltEngine
         return result;
     }
 
+    private static void ExtractAndRegisterNamespaces(XDocument xdoc)
+    {
+        if (xdoc.Root == null)
+        {
+            return;
+        }
+
+        var namespaces = new Dictionary<string, string>();
+
+        // Extract all namespace declarations from the root element
+        foreach (var attr in xdoc.Root.Attributes())
+        {
+            if (attr.IsNamespaceDeclaration)
+            {
+                var prefix = attr.Name.LocalName == "xmlns" ? string.Empty : attr.Name.LocalName;
+                var uri = attr.Value;
+
+                // Skip XSLT namespace and debug namespace
+                if (uri != "http://www.w3.org/1999/XSL/Transform" &&
+                    uri != DebugNamespace)
+                {
+                    // For default namespace (no prefix), also register with "default" prefix
+                    // This allows XPath expressions to use "default:ElementName" syntax
+                    if (string.IsNullOrEmpty(prefix))
+                    {
+                        namespaces[prefix] = uri;
+                        namespaces["default"] = uri;
+                    }
+                    else
+                    {
+                        namespaces[prefix] = uri;
+                    }
+                }
+            }
+        }
+
+        XsltEngineManager.RegisterStylesheetNamespaces(namespaces);
+    }
+
     private void EnsureDebugNamespace(XDocument doc)
     {
         if (doc.Root == null)
@@ -771,6 +879,13 @@ public class SaxonEngine : IXsltEngine
             var parentIsXslt = parent.Name.Namespace == xsltNamespace;
             var isXsltElement = element.Name.Namespace == xsltNamespace;
             var lineNumber = line!.Value;
+
+            if (isXsltElement &&
+                string.Equals(element.Name.LocalName, "template", StringComparison.OrdinalIgnoreCase) &&
+                element.IsEmpty)
+            {
+                continue;
+            }
 
             if (parentIsXslt && string.Equals(parent.Name.LocalName, "choose", StringComparison.OrdinalIgnoreCase))
             {

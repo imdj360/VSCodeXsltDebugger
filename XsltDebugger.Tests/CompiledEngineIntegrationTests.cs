@@ -27,11 +27,13 @@ public class CompiledEngineIntegrationTests
     [Fact]
     public async Task CompiledEngine_ShouldTransformInlineScriptSample_WithTraceLogging()
     {
-        var stylesheetPath = GetTestDataPath("Integration/sample-inline-cs-with-usings.xslt");
-        var xmlPath = GetTestDataPath("Integration/sample-inline-cs-with-usings.xml");
+        var stylesheetPath = GetTestDataPath("Integration/xslt/compiled/sample-inline-cs-with-usings.xslt");
+        var xmlPath = GetTestDataPath("Integration/xml/sample-inline-cs-with-usings.xml");
         var fullStylesheetPath = Path.GetFullPath(stylesheetPath);
         var fullXmlPath = Path.GetFullPath(xmlPath);
-        var breakpoints = new[] { (fullStylesheetPath, 24) };
+        var lines = File.ReadAllLines(fullStylesheetPath);
+        var templateLine = Array.FindIndex(lines, line => line.Contains("<xsl:template match=\"/\">", StringComparison.Ordinal)) + 1;
+        var breakpoints = new[] { (fullStylesheetPath, templateLine) };
 
         var engine = new XsltCompiledEngine();
         var outputLog = new List<string>();
@@ -74,7 +76,7 @@ public class CompiledEngineIntegrationTests
 
             var breakpointHit = await breakpointHitSource.Task.WaitAsync(TimeSpan.FromSeconds(5));
             breakpointHit.file.Should().Be(fullStylesheetPath);
-            breakpointHit.line.Should().Be(24);
+            breakpointHit.line.Should().Be(templateLine);
             breakpointHit.reason.Should().Be(DebugStopReason.Breakpoint);
 
             var exitCode = await terminatedSource.Task.WaitAsync(TimeSpan.FromSeconds(5));
@@ -108,8 +110,8 @@ public class CompiledEngineIntegrationTests
     [Fact]
     public async Task CompiledEngine_ShouldCaptureVariablesAndHitBreakpoints()
     {
-        var stylesheetPath = GetTestDataPath("Integration/VariableLoggingSampleV1.xslt");
-        var xmlPath = GetTestDataPath("Integration/VariableLoggingSampleV1Input.xml");
+        var stylesheetPath = GetTestDataPath("Integration/xslt/compiled/VariableLoggingSampleV1.xslt");
+        var xmlPath = GetTestDataPath("Integration/xml/VariableLoggingSampleV1Input.xml");
         var fullStylesheetPath = Path.GetFullPath(stylesheetPath);
         var fullXmlPath = Path.GetFullPath(xmlPath);
         var breakpoints = new[] { (fullStylesheetPath, 8) };
@@ -181,6 +183,401 @@ public class CompiledEngineIntegrationTests
         {
             XsltEngineManager.EngineOutput -= OnOutput;
             XsltEngineManager.EngineStopped -= OnStopped;
+            XsltEngineManager.EngineTerminated -= OnTerminated;
+            XsltEngineManager.Reset();
+        }
+    }
+
+    [Fact]
+    public async Task CompiledEngine_ShouldInstrumentInlineCSharpMethods()
+    {
+        var stylesheetPath = GetTestDataPath("Integration/xslt/compiled/sample-inline-cs-auto-instrument.xslt");
+        var xmlPath = GetTestDataPath("Integration/xml/sample-inline-cs-auto-instrument.xml");
+        var fullStylesheetPath = Path.GetFullPath(stylesheetPath);
+        var fullXmlPath = Path.GetFullPath(xmlPath);
+
+        var engine = new XsltCompiledEngine();
+        var outputLog = new List<string>();
+        var outputLock = new object();
+        var terminatedSource = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        void OnOutput(string message)
+        {
+            lock (outputLock)
+            {
+                outputLog.Add(message);
+            }
+        }
+
+        void OnTerminated(int code) => terminatedSource.TrySetResult(code);
+
+        XsltEngineManager.Reset();
+        XsltEngineManager.SetDebugFlags(true, LogLevel.Log);
+        XsltEngineManager.EngineOutput += OnOutput;
+        XsltEngineManager.EngineTerminated += OnTerminated;
+
+        try
+        {
+            await engine.StartAsync(fullStylesheetPath, fullXmlPath, stopOnEntry: false);
+
+            var exitCode = await terminatedSource.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            exitCode.Should().Be(0, "transformation should complete successfully");
+
+            List<string> snapshot;
+            lock (outputLock)
+            {
+                snapshot = outputLog.ToList();
+            }
+
+            // Verify instrumentation occurred
+            snapshot.Should().Contain(message => message.Contains("Instrumented 3 inline C# method(s)", StringComparison.OrdinalIgnoreCase),
+                "should report instrumenting 3 C# methods");
+
+            // Verify Add method logging
+            snapshot.Should().Contain(message => message.Contains("[inline] [Add:", StringComparison.Ordinal) && message.Contains("args = { a = 5, b = 3 }"),
+                "should log Add method entry with parameters");
+            snapshot.Should().Contain(message => message.Contains("[inline] [Add:", StringComparison.Ordinal) && message.Contains("return = 8"),
+                "should log Add method return value");
+
+            // Verify Multiply method logging
+            snapshot.Should().Contain(message => message.Contains("[inline] [Multiply:", StringComparison.Ordinal) && message.Contains("args = { a = 4, b = 7 }"),
+                "should log Multiply method entry with parameters");
+            snapshot.Should().Contain(message => message.Contains("[inline] [Multiply:", StringComparison.Ordinal) && message.Contains("return = 28"),
+                "should log Multiply method return value");
+
+            // Verify FormatNumber method logging
+            snapshot.Should().Contain(message => message.Contains("[inline] [FormatNumber:", StringComparison.Ordinal) && message.Contains("args = { num = 1000000 }"),
+                "should log FormatNumber method entry with parameters");
+            snapshot.Should().Contain(message => message.Contains("[inline] [FormatNumber:", StringComparison.Ordinal) && message.Contains("return = 1,000,000"),
+                "should log FormatNumber method return value");
+        }
+        finally
+        {
+            XsltEngineManager.EngineOutput -= OnOutput;
+            XsltEngineManager.EngineTerminated -= OnTerminated;
+            XsltEngineManager.Reset();
+        }
+    }
+
+    [Fact]
+    public async Task CompiledEngine_ShouldIncludeXsltLineNumbersInInlineCSharpLogs()
+    {
+        var stylesheetPath = GetTestDataPath("Integration/xslt/compiled/ShipmentConfv1.xslt");
+        var xmlPath = GetTestDataPath("Integration/xml/ShipmentConf-proper.xml");
+        var fullStylesheetPath = Path.GetFullPath(stylesheetPath);
+        var fullXmlPath = Path.GetFullPath(xmlPath);
+
+        var engine = new XsltCompiledEngine();
+        var outputLog = new List<string>();
+        var outputLock = new object();
+        var terminatedSource = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        void OnOutput(string message)
+        {
+            lock (outputLock)
+            {
+                outputLog.Add(message);
+            }
+        }
+
+        void OnTerminated(int code) => terminatedSource.TrySetResult(code);
+
+        XsltEngineManager.Reset();
+        XsltEngineManager.SetDebugFlags(true, LogLevel.Log);
+        XsltEngineManager.EngineOutput += OnOutput;
+        XsltEngineManager.EngineTerminated += OnTerminated;
+
+        try
+        {
+            await engine.StartAsync(fullStylesheetPath, fullXmlPath, stopOnEntry: false);
+
+            var exitCode = await terminatedSource.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            exitCode.Should().Be(0, "transformation should complete successfully");
+
+            List<string> snapshot;
+            lock (outputLock)
+            {
+                snapshot = outputLog.ToList();
+            }
+
+            // Verify XSLT line numbers are included in inline C# logs
+            snapshot.Should().Contain(message => message.Contains("@XSLT:75", StringComparison.Ordinal),
+                "should include XSLT line 75 for RoundToTwoDecimals call");
+            snapshot.Should().Contain(message => message.Contains("@XSLT:88", StringComparison.Ordinal),
+                "should include XSLT line 88 for MinDate call");
+
+            // Verify C# line numbers are also included
+            snapshot.Should().Contain(message => message.Contains("[RoundToTwoDecimals:L", StringComparison.Ordinal),
+                "should include C# line number for RoundToTwoDecimals");
+            snapshot.Should().Contain(message => message.Contains("[MinDate:L", StringComparison.Ordinal),
+                "should include C# line number for MinDate");
+        }
+        finally
+        {
+            XsltEngineManager.EngineOutput -= OnOutput;
+            XsltEngineManager.EngineTerminated -= OnTerminated;
+            XsltEngineManager.Reset();
+        }
+    }
+
+    [Fact]
+    public async Task CompiledEngine_ShouldNotDoubleInstrumentManuallyLoggedMethods()
+    {
+        var stylesheetPath = GetTestDataPath("Integration/xslt/compiled/sample-inline-cs-with-usings.xslt");
+        var xmlPath = GetTestDataPath("Integration/xml/sample-inline-cs-with-usings.xml");
+        var fullStylesheetPath = Path.GetFullPath(stylesheetPath);
+        var fullXmlPath = Path.GetFullPath(xmlPath);
+
+        var engine = new XsltCompiledEngine();
+        var outputLog = new List<string>();
+        var outputLock = new object();
+        var terminatedSource = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        void OnOutput(string message)
+        {
+            lock (outputLock)
+            {
+                outputLog.Add(message);
+            }
+        }
+
+        void OnTerminated(int code) => terminatedSource.TrySetResult(code);
+
+        XsltEngineManager.Reset();
+        XsltEngineManager.SetDebugFlags(true, LogLevel.Log);
+        XsltEngineManager.EngineOutput += OnOutput;
+        XsltEngineManager.EngineTerminated += OnTerminated;
+
+        try
+        {
+            await engine.StartAsync(fullStylesheetPath, fullXmlPath, stopOnEntry: false);
+
+            var exitCode = await terminatedSource.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            exitCode.Should().Be(0, "transformation should complete successfully");
+
+            List<string> snapshot;
+            lock (outputLock)
+            {
+                snapshot = outputLog.ToList();
+            }
+
+            // Should NOT see "Instrumented N inline C# method(s)" because methods already use LogEntry/LogReturn
+            snapshot.Should().NotContain(message => message.Contains("Instrumented 2 inline C# method(s)", StringComparison.OrdinalIgnoreCase),
+                "should not instrument already manually logged methods");
+
+            // But should still see the manual logging output (with XSLT line numbers now)
+            snapshot.Should().Contain(message => message.Contains("[inline] [FormatCurrentDate:", StringComparison.Ordinal),
+                "should still have manual logging from FormatCurrentDate");
+            snapshot.Should().Contain(message => message.Contains("[inline] [AddDays:", StringComparison.Ordinal),
+                "should still have manual logging from AddDays");
+        }
+        finally
+        {
+            XsltEngineManager.EngineOutput -= OnOutput;
+            XsltEngineManager.EngineTerminated -= OnTerminated;
+            XsltEngineManager.Reset();
+        }
+    }
+
+    [Fact]
+    public async Task CompiledEngine_ShouldLogForEachPositionWithoutSort()
+    {
+        var stylesheetPath = GetTestDataPath("Integration/xslt/compiled/foreach-test.xslt");
+        var xmlPath = GetTestDataPath("Integration/xml/foreach-test.xml");
+        var fullStylesheetPath = Path.GetFullPath(stylesheetPath);
+        var fullXmlPath = Path.GetFullPath(xmlPath);
+
+        var engine = new XsltCompiledEngine();
+        var outputLog = new List<string>();
+        var outputLock = new object();
+        var terminatedSource = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        void OnOutput(string message)
+        {
+            lock (outputLock)
+            {
+                outputLog.Add(message);
+            }
+        }
+
+        void OnTerminated(int code) => terminatedSource.TrySetResult(code);
+
+        XsltEngineManager.Reset();
+        XsltEngineManager.SetDebugFlags(true, LogLevel.Log);
+        XsltEngineManager.EngineOutput += OnOutput;
+        XsltEngineManager.EngineTerminated += OnTerminated;
+
+        try
+        {
+            await engine.StartAsync(fullStylesheetPath, fullXmlPath, stopOnEntry: false);
+
+            var exitCode = await terminatedSource.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            exitCode.Should().Be(0, "transformation should complete successfully");
+
+            List<string> snapshot;
+            lock (outputLock)
+            {
+                snapshot = outputLog.ToList();
+            }
+
+            // Verify for-each position logging for simple loop (line 10)
+            snapshot.Should().Contain(message => message.Contains("[xsl:message] [DBG] for-each line=10", StringComparison.Ordinal) && message.Contains("select=/root/items/item", StringComparison.Ordinal) && message.Contains("pos=1", StringComparison.Ordinal),
+                "should log position 1 for first iteration");
+            snapshot.Should().Contain(message => message.Contains("[xsl:message] [DBG] for-each line=10", StringComparison.Ordinal) && message.Contains("pos=2", StringComparison.Ordinal),
+                "should log position 2 for second iteration");
+            snapshot.Should().Contain(message => message.Contains("[xsl:message] [DBG] for-each line=10", StringComparison.Ordinal) && message.Contains("pos=3", StringComparison.Ordinal),
+                "should log position 3 for third iteration");
+
+            // Verify for-each variable was captured
+            // Note: The variable will contain the LAST for-each that executed
+            // Since this test file has two for-each loops, it will be line 17 (the second one)
+            XsltEngineManager.Variables.Should().ContainKey("for-each");
+            XsltEngineManager.Variables["for-each"].Should().NotBeNull();
+            var forEachValue = XsltEngineManager.Variables["for-each"]!.ToString();
+            (forEachValue.Contains("line=10") || forEachValue.Contains("line=17")).Should().BeTrue(
+                "for-each variable should contain either line 10 or line 17");
+
+            // Verify variable capture logging occurred (should see captures for BOTH loops)
+            snapshot.Should().Contain(message => message.Contains("Captured variable: $for-each", StringComparison.Ordinal) && message.Contains("line=10"),
+                "should log variable capture for line 10 for-each");
+            snapshot.Should().Contain(message => message.Contains("Captured variable: $for-each", StringComparison.Ordinal) && message.Contains("line=17"),
+                "should log variable capture for line 17 for-each");
+        }
+        finally
+        {
+            XsltEngineManager.EngineOutput -= OnOutput;
+            XsltEngineManager.EngineTerminated -= OnTerminated;
+            XsltEngineManager.Reset();
+        }
+    }
+
+    [Fact]
+    public async Task CompiledEngine_ShouldLogForEachPositionWithSort()
+    {
+        var stylesheetPath = GetTestDataPath("Integration/xslt/compiled/foreach-test.xslt");
+        var xmlPath = GetTestDataPath("Integration/xml/foreach-test.xml");
+        var fullStylesheetPath = Path.GetFullPath(stylesheetPath);
+        var fullXmlPath = Path.GetFullPath(xmlPath);
+
+        var engine = new XsltCompiledEngine();
+        var outputLog = new List<string>();
+        var outputLock = new object();
+        var terminatedSource = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        void OnOutput(string message)
+        {
+            lock (outputLock)
+            {
+                outputLog.Add(message);
+            }
+        }
+
+        void OnTerminated(int code) => terminatedSource.TrySetResult(code);
+
+        XsltEngineManager.Reset();
+        XsltEngineManager.SetDebugFlags(true, LogLevel.Log);
+        XsltEngineManager.EngineOutput += OnOutput;
+        XsltEngineManager.EngineTerminated += OnTerminated;
+
+        try
+        {
+            await engine.StartAsync(fullStylesheetPath, fullXmlPath, stopOnEntry: false);
+
+            var exitCode = await terminatedSource.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            exitCode.Should().Be(0, "transformation should complete successfully");
+
+            List<string> snapshot;
+            lock (outputLock)
+            {
+                snapshot = outputLog.ToList();
+            }
+
+            // Verify for-each position logging for loop with sort (line 17)
+            snapshot.Should().Contain(message => message.Contains("[xsl:message] [DBG] for-each line=17", StringComparison.Ordinal) && message.Contains("select=/root/sorted/item", StringComparison.Ordinal) && message.Contains("pos=1", StringComparison.Ordinal),
+                "should log position 1 for first iteration (after sort)");
+            snapshot.Should().Contain(message => message.Contains("[xsl:message] [DBG] for-each line=17", StringComparison.Ordinal) && message.Contains("pos=2", StringComparison.Ordinal),
+                "should log position 2 for second iteration (after sort)");
+            snapshot.Should().Contain(message => message.Contains("[xsl:message] [DBG] for-each line=17", StringComparison.Ordinal) && message.Contains("pos=3", StringComparison.Ordinal),
+                "should log position 3 for third iteration (after sort)");
+
+            // Verify for-each variable was captured (will contain the last iteration's value)
+            XsltEngineManager.Variables.Should().ContainKey("for-each");
+            XsltEngineManager.Variables["for-each"].Should().NotBeNull();
+            XsltEngineManager.Variables["for-each"]!.ToString().Should().Contain("line=17");
+            XsltEngineManager.Variables["for-each"]!.ToString().Should().Contain("select=/root/sorted/item");
+        }
+        finally
+        {
+            XsltEngineManager.EngineOutput -= OnOutput;
+            XsltEngineManager.EngineTerminated -= OnTerminated;
+            XsltEngineManager.Reset();
+        }
+    }
+
+    [Fact]
+    public async Task CompiledEngine_ShouldLogForEachInShipmentConfv1()
+    {
+        var stylesheetPath = GetTestDataPath("Integration/xslt/compiled/ShipmentConfv1.xslt");
+        var xmlPath = GetTestDataPath("Integration/xml/ShipmentConf-proper.xml");
+        var fullStylesheetPath = Path.GetFullPath(stylesheetPath);
+        var fullXmlPath = Path.GetFullPath(xmlPath);
+
+        var engine = new XsltCompiledEngine();
+        var outputLog = new List<string>();
+        var outputLock = new object();
+        var terminatedSource = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        void OnOutput(string message)
+        {
+            lock (outputLock)
+            {
+                outputLog.Add(message);
+            }
+        }
+
+        void OnTerminated(int code) => terminatedSource.TrySetResult(code);
+
+        XsltEngineManager.Reset();
+        XsltEngineManager.SetDebugFlags(true, LogLevel.Log);
+        XsltEngineManager.EngineOutput += OnOutput;
+        XsltEngineManager.EngineTerminated += OnTerminated;
+
+        try
+        {
+            await engine.StartAsync(fullStylesheetPath, fullXmlPath, stopOnEntry: false);
+
+            var exitCode = await terminatedSource.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            exitCode.Should().Be(0, "transformation should complete successfully");
+
+            List<string> snapshot;
+            lock (outputLock)
+            {
+                snapshot = outputLog.ToList();
+            }
+
+            // Verify for-each position logging for outer loop (line 60)
+            snapshot.Should().Contain(message => message.Contains("[xsl:message] [DBG] for-each line=60", StringComparison.Ordinal) && message.Contains("select=/ShipmentConfirmation/Orders/OrderItems", StringComparison.Ordinal),
+                "should log position for outer for-each at line 60");
+
+            // Verify for-each position logging for nested loop (line 83)
+            snapshot.Should().Contain(message => message.Contains("[xsl:message] [DBG] for-each line=83", StringComparison.Ordinal) && message.Contains("select=OperationReports/ReportInfo/OperationReportDate", StringComparison.Ordinal),
+                "should log position for nested for-each at line 83");
+
+            // Verify the existing xsl:message at line 67 is still present
+            snapshot.Should().Contain(message => message.Contains("[xsl:message] Hello", StringComparison.Ordinal),
+                "should preserve existing xsl:message elements");
+
+            // Verify for-each variable was captured
+            XsltEngineManager.Variables.Should().ContainKey("for-each");
+            XsltEngineManager.Variables["for-each"].Should().NotBeNull();
+            // The variable will contain the last for-each that executed (could be line 60 or line 83)
+            var forEachValue = XsltEngineManager.Variables["for-each"]!.ToString();
+            (forEachValue.Contains("line=60") || forEachValue.Contains("line=83")).Should().BeTrue(
+                "for-each variable should contain either line 60 or line 83");
+        }
+        finally
+        {
+            XsltEngineManager.EngineOutput -= OnOutput;
             XsltEngineManager.EngineTerminated -= OnTerminated;
             XsltEngineManager.Reset();
         }

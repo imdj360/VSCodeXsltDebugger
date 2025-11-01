@@ -5,10 +5,14 @@ src/**
 .vscodeignore
 .yarnrc
 vsc-extension-quickstart.md
+package.json.backup
+TestData/**
+docs/**
 **/tsconfig.json
 **/eslint.config.mjs
 **/*.map
 **/*.ts
+**/*.sh
 **/.vscode-test.*
 .github/**
 
@@ -69,6 +73,9 @@ logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+*.out.xml
+**/*.out.xml
+TestData/**/out/**
 
 # Node modules (should be handled by vsce, but just in case)
 node_modules/**
@@ -116,3 +123,6 @@ VARIABLE-PRINT-GUIDE.md
 # Packaging scripts
 package-darwin.sh
 package-win.sh
+package-all.sh
+test-debug-output.sh
+test-namespace-support.sh

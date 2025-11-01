@@ -18,8 +18,8 @@ class StepIntoTest
         Console.WriteLine("=== XSLT Step-Into Test ===\n");
 
         // Use the step-into test files
-        var stylesheetPath = Path.GetFullPath("TestData/Integration/step-into-test.xslt");
-        var xmlPath = Path.GetFullPath("TestData/Integration/step-into-test.xml");
+        var stylesheetPath = Path.GetFullPath("TestData/Integration/xslt/tests/step-into-test.xslt");
+        var xmlPath = Path.GetFullPath("TestData/Integration/xml/step-into-test.xml");
 
         if (!File.Exists(stylesheetPath))
         {

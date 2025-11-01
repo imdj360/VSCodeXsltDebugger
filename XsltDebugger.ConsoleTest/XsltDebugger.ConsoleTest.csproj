@@ -20,12 +20,16 @@
   <ItemGroup>
     <Compile Remove="Program.cs" />
     <Compile Remove="ProgramWithInstrumentation.cs" />
-    <Compile Remove="ProgramUsingEngineType.cs" />
     <Compile Remove="QuickStepTest.cs" />
+    <Compile Remove="StepIntoTest.cs" />
+    <Compile Remove="LmlCompilationTest.cs" />
+    <Compile Remove="NamespaceExtractionTest.cs" />
     <None Include="Program.cs" />
     <None Include="ProgramWithInstrumentation.cs" />
-    <None Include="ProgramUsingEngineType.cs" />
     <None Include="QuickStepTest.cs" />
+    <None Include="StepIntoTest.cs" />
+    <None Include="LmlCompilationTest.cs" />
+    <None Include="NamespaceExtractionTest.cs" />
   </ItemGroup>
 
 </Project>

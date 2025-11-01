@@ -35,9 +35,9 @@ class ProgramUsingEngineType
 
         // Use different defaults based on engine type
         var defaultXslt = engineType == "compiled"
-            ? Path.Combine(DefaultTestDataFolder, "sample-inline-cs-with-usings.xslt")
-            : Path.Combine(DefaultTestDataFolder, "ShipmentConf3.xslt");
-        var defaultXml = Path.Combine(DefaultTestDataFolder, engineType == "compiled" ? "sample-inline-cs-with-usings.xml" : "ShipmentConf-proper.xml");
+            ? Path.Combine(DefaultTestDataFolder, "xslt/compiled/sample-inline-cs-with-usings.xslt")
+            : Path.Combine(DefaultTestDataFolder, "xslt/saxon/ShipmentConf3.xslt");
+        var defaultXml = Path.Combine(DefaultTestDataFolder, engineType == "compiled" ? "xml/sample-inline-cs-with-usings.xml" : "xml/ShipmentConf-proper.xml");
 
         var stylesheetPath = ResolveInput(filteredArgs.ToArray(), 0, defaultXslt);
         var xmlPath = ResolveInput(filteredArgs.ToArray(), 1, defaultXml);
@@ -77,7 +77,8 @@ class ProgramUsingEngineType
             var fullStylesheetPath = Path.GetFullPath(stylesheetPath);
             int breakpointLine = stylesheetPath.Contains("message-test") ? 9 :
                                  stylesheetPath.Contains("ShipmentConf3") ? 55 :
-                                 stylesheetPath.Contains("VariableLoggingSampleV1") ? 8 : 26;
+                                 stylesheetPath.Contains("VariableLoggingSampleV1") ? 8 :
+                                 stylesheetPath.Contains("step-into-test") ? 12 : 26;
             engine.SetBreakpoints(new[] { (fullStylesheetPath, breakpointLine) });
             Console.WriteLine($"   >> Breakpoint set at line {breakpointLine}\n");
 
@@ -157,6 +158,31 @@ class ProgramUsingEngineType
                             } while (attrNav.MoveToNextAttribute());
                         }
                     }
+                }
+
+                // Display registered stylesheet namespaces
+                Console.ForegroundColor = ConsoleColor.White;
+                Console.WriteLine("\n  🌐 REGISTERED NAMESPACES:");
+                Console.ResetColor();
+                if (XsltEngineManager.StylesheetNamespaces.Count > 0)
+                {
+                    foreach (var kvp in XsltEngineManager.StylesheetNamespaces)
+                    {
+                        var prefix = string.IsNullOrEmpty(kvp.Key) ? "(no prefix)" : kvp.Key;
+                        Console.ForegroundColor = ConsoleColor.Cyan;
+                        Console.Write($"     {prefix}");
+                        Console.ResetColor();
+                        Console.Write(" → ");
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.WriteLine(kvp.Value);
+                        Console.ResetColor();
+                    }
+                }
+                else
+                {
+                    Console.ForegroundColor = ConsoleColor.DarkGray;
+                    Console.WriteLine("     (no custom namespaces)");
+                    Console.ResetColor();
                 }
 
                 // Display XSLT variables

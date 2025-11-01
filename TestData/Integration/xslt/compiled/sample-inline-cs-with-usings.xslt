@@ -10,12 +10,14 @@ using System.Globalization;
 
 public class DateFormatter {
     public string FormatCurrentDate() {
-        return DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        LogEntry();
+        return LogReturn(DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
     }
 
     public string AddDays(string dateStr, int days) {
+        LogEntry(new { dateStr, days });
         DateTime date = DateTime.Parse(dateStr);
-        return date.AddDays(days).ToString("yyyy-MM-dd");
+        return LogReturn(date.AddDays(days).ToString("yyyy-MM-dd"));
     }
 }
 ]]>

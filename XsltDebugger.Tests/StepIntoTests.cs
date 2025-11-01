@@ -267,8 +267,8 @@ public class StepIntoTests
     [Fact]
     public async Task XsltCompiledEngine_StepOver_CallTemplate_ShouldPauseAfterReturn()
     {
-        var xsltPath = GetTestDataPath("Integration/step-into-test.xslt");
-        var xmlPath = GetTestDataPath("Integration/step-into-test.xml");
+        var xsltPath = GetTestDataPath("Integration/xslt/tests/step-into-test.xslt");
+        var xmlPath = GetTestDataPath("Integration/xml/step-into-test.xml");
 
         var lines = File.ReadAllLines(xsltPath);
         var callLine = Array.FindIndex(lines, line => line.Contains(@"<xsl:call-template name=""formatCurrency""", StringComparison.Ordinal)) + 1;
@@ -331,8 +331,8 @@ public class StepIntoTests
     [Fact]
     public async Task SaxonEngine_StepOver_CallTemplate_ShouldPauseAfterReturn()
     {
-        var xsltPath = GetTestDataPath("Integration/step-into-test.xslt");
-        var xmlPath = GetTestDataPath("Integration/step-into-test.xml");
+        var xsltPath = GetTestDataPath("Integration/xslt/tests/step-into-test.xslt");
+        var xmlPath = GetTestDataPath("Integration/xml/step-into-test.xml");
 
         var lines = File.ReadAllLines(xsltPath);
         var callLine = Array.FindIndex(lines, line => line.Contains(@"<xsl:call-template name=""formatCurrency""", StringComparison.Ordinal)) + 1;
@@ -512,8 +512,8 @@ public class StepIntoTests
     [Fact]
     public async Task XsltCompiledEngine_StepOut_FromNestedTemplate_ShouldPauseAtCaller()
     {
-        var xsltPath = GetTestDataPath("Integration/step-into-test.xslt");
-        var xmlPath = GetTestDataPath("Integration/step-into-test.xml");
+        var xsltPath = GetTestDataPath("Integration/xslt/tests/step-into-test.xslt");
+        var xmlPath = GetTestDataPath("Integration/xml/step-into-test.xml");
 
         var lines = File.ReadAllLines(xsltPath);
         var callLine = Array.FindIndex(lines, line => line.Contains(@"<xsl:call-template name=""formatCurrency""", StringComparison.Ordinal)) + 1;
@@ -597,8 +597,8 @@ public class StepIntoTests
     [Fact]
     public async Task SaxonEngine_StepOut_FromNestedTemplate_ShouldPauseAtCaller()
     {
-        var xsltPath = GetTestDataPath("Integration/step-into-test.xslt");
-        var xmlPath = GetTestDataPath("Integration/step-into-test.xml");
+        var xsltPath = GetTestDataPath("Integration/xslt/tests/step-into-test.xslt");
+        var xmlPath = GetTestDataPath("Integration/xml/step-into-test.xml");
 
         var lines = File.ReadAllLines(xsltPath);
         var callLine = Array.FindIndex(lines, line => line.Contains(@"<xsl:call-template name=""formatCurrency""", StringComparison.Ordinal)) + 1;

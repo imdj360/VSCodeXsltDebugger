@@ -137,6 +137,9 @@ public class XsltCompiledEngine : IXsltEngine
                     return;
                 }
 
+                // Extract and register stylesheet namespaces for XPath evaluation in watch expressions
+                ExtractAndRegisterNamespaces(xdoc);
+
                 // XSLT 1.0 with XslCompiledTransform
                 XNamespace msxsl = "urn:schemas-microsoft-com:xslt";
                 var scripts = xdoc.Descendants(msxsl + "script").ToList();
@@ -179,8 +182,18 @@ public class XsltCompiledEngine : IXsltEngine
                 }
 
                 EnsureDebugNamespace(xdoc);
-                InstrumentStylesheet(xdoc);
-                InstrumentVariables(xdoc);
+                Xslt1Instrumentation.InstrumentStylesheet(xdoc, _currentStylesheet, DebugNamespace, addProbeAttribute: false);
+                Xslt1Instrumentation.InstrumentVariables(xdoc, DebugNamespace, addProbeAttribute: false);
+
+                // DEBUG: Save instrumented XSLT for inspection
+                if (XsltEngineManager.IsTraceEnabled)
+                {
+                    var debugPath = Path.Combine(Path.GetDirectoryName(_currentStylesheet) ?? ".", "out",
+                        Path.GetFileNameWithoutExtension(_currentStylesheet) + ".instrumented.xslt");
+                    Directory.CreateDirectory(Path.GetDirectoryName(debugPath) ?? ".");
+                    xdoc.Save(debugPath);
+                    XsltEngineManager.NotifyOutput($"[trace] Saved instrumented XSLT to: {debugPath}");
+                }
 
                 var settings = new XsltSettings(enableDocumentFunction: false, enableScript: false);
                 args.AddExtensionObject(DebugNamespace, new XsltDebugExtension(this, _currentStylesheet));
@@ -331,19 +344,23 @@ public class XsltCompiledEngine : IXsltEngine
         }
 
         // Always update the context for evaluation, even when not pausing
-        XsltEngineManager.UpdateContext(contextNode);
+        var clonedContext = CloneContextNavigator(contextNode);
+        XsltEngineManager.UpdateContext(clonedContext);
+
+        // Track current line for inline C# method logging
+        XsltEngineManager.UpdateCurrentLine(normalized, line);
 
         // Check if we hit a user-set breakpoint
         if (!isTemplateExit && IsBreakpointHit(normalized, line))
         {
-            PauseForBreakpoint(normalized, line, DebugStopReason.Breakpoint, contextNode);
+            PauseForBreakpoint(normalized, line, DebugStopReason.Breakpoint, clonedContext);
             return;
         }
 
         // Check if we should stop based on step mode
         if (ShouldStopForStep(normalized, line, isTemplateExit))
         {
-            PauseForBreakpoint(normalized, line, DebugStopReason.Step, contextNode);
+            PauseForBreakpoint(normalized, line, DebugStopReason.Step, clonedContext);
         }
     }
 
@@ -453,6 +470,45 @@ public class XsltCompiledEngine : IXsltEngine
         return result;
     }
 
+    private static void ExtractAndRegisterNamespaces(XDocument xdoc)
+    {
+        if (xdoc.Root == null)
+        {
+            return;
+        }
+
+        var namespaces = new Dictionary<string, string>();
+
+        // Extract all namespace declarations from the root element
+        foreach (var attr in xdoc.Root.Attributes())
+        {
+            if (attr.IsNamespaceDeclaration)
+            {
+                var prefix = attr.Name.LocalName == "xmlns" ? string.Empty : attr.Name.LocalName;
+                var uri = attr.Value;
+
+                // Skip XSLT namespace and debug namespace
+                if (uri != "http://www.w3.org/1999/XSL/Transform" &&
+                    uri != DebugNamespace)
+                {
+                    // For default namespace (no prefix), also register with "default" prefix
+                    // This allows XPath expressions to use "default:ElementName" syntax
+                    if (string.IsNullOrEmpty(prefix))
+                    {
+                        namespaces[prefix] = uri;
+                        namespaces["default"] = uri;
+                    }
+                    else
+                    {
+                        namespaces[prefix] = uri;
+                    }
+                }
+            }
+        }
+
+        XsltEngineManager.RegisterStylesheetNamespaces(namespaces);
+    }
+
     private void EnsureDebugNamespace(XDocument doc)
     {
         if (doc.Root == null)
@@ -467,380 +523,150 @@ public class XsltCompiledEngine : IXsltEngine
         }
     }
 
-    private void InstrumentStylesheet(XDocument doc)
+    private static XPathNavigator? CloneContextNavigator(XPathNavigator? context)
     {
-        if (doc.Root == null)
+        if (context == null)
         {
-            return;
+            return null;
         }
 
-        var xsltNamespace = doc.Root.Name.Namespace;
-        var candidates = doc
-            .Descendants()
-            .Where(e => ShouldInstrument(e, xsltNamespace))
-            .Select(e => (Element: e, Line: GetLineNumber(e)))
-            .Where(tuple => tuple.Line.HasValue)
-            .ToList();
+        try
+        {
+            var originalClone = context.Clone();
+            var pathToContext = GetXPathToNavigator(originalClone);
 
-        if (XsltEngineManager.TraceEnabled)
+            // Move to the document root and capture the XML backing the navigator
+            originalClone.MoveToRoot();
+            if (!originalClone.MoveToFirstChild())
+            {
+                return context.Clone();
+            }
+
+            while (originalClone.NodeType != XPathNodeType.Element)
+            {
+                if (!originalClone.MoveToNext())
+                {
+                    return context.Clone();
+                }
+            }
+
+            var xml = originalClone.OuterXml;
+            var xmlDoc = new XmlDocument();
+            xmlDoc.LoadXml(xml);
+
+            var navigator = xmlDoc.CreateNavigator();
+            if (navigator == null)
+            {
+                return context.Clone();
+            }
+
+            if (!string.IsNullOrEmpty(pathToContext) && pathToContext != "/")
+            {
+                var nsManager = BuildNamespaceManager(xmlDoc);
+                var positioned = navigator.SelectSingleNode(pathToContext, nsManager);
+                if (positioned != null)
+                {
+                    return positioned.Clone();
+                }
+            }
+
+            return navigator;
+        }
+        catch
         {
             try
             {
-                var linesText = string.Join(",", candidates.Select(c => c.Line!.Value).Distinct().OrderBy(x => x));
-                XsltEngineManager.NotifyOutput($"[trace] instrumented lines (compiled) for '{_currentStylesheet}': [{linesText}]");
+                return context.Clone();
             }
-            catch { }
+            catch
+            {
+                return null;
+            }
+        }
+    }
+
+    private static XmlNamespaceManager BuildNamespaceManager(XmlDocument xmlDoc)
+    {
+        var manager = new XmlNamespaceManager(xmlDoc.NameTable);
+        if (xmlDoc.DocumentElement == null)
+        {
+            return manager;
         }
 
-        foreach (var (element, line) in candidates)
+        try
         {
-            if (element.Parent == null)
+            var navigator = xmlDoc.CreateNavigator();
+            if (navigator != null && navigator.MoveToFirstChild())
             {
-                continue;
-            }
-
-            var isXsltElement = element.Name.Namespace == xsltNamespace;
-
-            // Check if this is a named template (for step-into support)
-            var isNamedTemplate = isXsltElement &&
-                                  string.Equals(element.Name.LocalName, "template", StringComparison.OrdinalIgnoreCase) &&
-                                  element.Attribute("name") != null;
-
-            // Create breakpoint call with template-entry marker if it's a named template
-            var breakCall = isNamedTemplate
-                ? new XElement(xsltNamespace + "value-of",
-                    new XAttribute("select", $"dbg:break({line!.Value}, ., 'template-entry')"))
-                : new XElement(xsltNamespace + "value-of",
-                    new XAttribute("select", $"dbg:break({line!.Value}, .)"));
-
-            var parent = element.Parent;
-            var parentIsXslt = parent?.Name.Namespace == xsltNamespace;
-
-            if (parentIsXslt && string.Equals(parent!.Name.LocalName, "choose", StringComparison.OrdinalIgnoreCase))
-            {
-                if (isXsltElement && (string.Equals(element.Name.LocalName, "when", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(element.Name.LocalName, "otherwise", StringComparison.OrdinalIgnoreCase)))
+                foreach (var kvp in navigator.GetNamespacesInScope(XmlNamespaceScope.All))
                 {
-                    element.AddFirst(breakCall);
-                }
-                continue;
-            }
-
-            // Special handling for named templates with params/variables
-            // In XSLT 1.0, ALL params and variables must come first
-            if (isNamedTemplate)
-            {
-                // Find the last param/variable in this template
-                var lastParamOrVar = element.Elements()
-                    .Where(e => e.Name.Namespace == xsltNamespace &&
-                               (e.Name.LocalName == "param" || e.Name.LocalName == "variable"))
-                    .LastOrDefault();
-
-                if (lastParamOrVar != null)
-                {
-                    // Insert the template-entry breakpoint AFTER all params/variables
-                    lastParamOrVar.AddAfterSelf(breakCall);
-                }
-                else
-                {
-                    // No params or variables, safe to insert as first child
-                    element.AddFirst(breakCall);
+                    var prefix = kvp.Key ?? string.Empty;
+                    try { manager.AddNamespace(prefix, kvp.Value); }
+                    catch { /* ignore duplicates */ }
                 }
             }
-            else if (CanInsertAsFirstChild(element, isXsltElement))
-            {
-                element.AddFirst(breakCall);
-            }
-            else
-            {
-                element.AddBeforeSelf(breakCall);
-            }
-
-            if (isNamedTemplate)
-            {
-                EnsureTemplateExitBreakpoint(element, line!.Value, xsltNamespace);
-            }
         }
+        catch
+        {
+            // Ignore namespace extraction issues; fall back to empty manager
+        }
+
+        return manager;
     }
 
-    private static void EnsureTemplateExitBreakpoint(XElement templateElement, int lineNumber, XNamespace xsltNamespace)
+    private static string GetXPathToNavigator(XPathNavigator navigator)
     {
-        var exitSelect = $"dbg:break({lineNumber}, ., 'template-exit')";
-
-        var existing = templateElement
-            .Elements()
-            .FirstOrDefault(e =>
-                e.Name.Namespace == xsltNamespace &&
-                string.Equals(e.Name.LocalName, "value-of", StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(e.Attribute("select")?.Value, exitSelect, StringComparison.Ordinal));
-
-        if (existing != null)
+        try
         {
-            return;
-        }
+            var pathParts = new List<string>();
+            var current = navigator.Clone();
 
-        var exitCall = new XElement(
-            xsltNamespace + "value-of",
-            new XAttribute("select", exitSelect));
-
-        templateElement.Add(exitCall);
-    }
-
-    private static bool ShouldInstrument(XElement element, XNamespace xsltNamespace)
-    {
-        if (element.Parent == null)
-        {
-            return false;
-        }
-
-        // Exclude any elements inside xsl:message to avoid instrumentation conflicts
-        if (element.Ancestors().Any(a => a.Name.Namespace == xsltNamespace && a.Name.LocalName is "message"))
-        {
-            return false;
-        }
-
-        if (element.Name.Namespace == xsltNamespace)
-        {
-            var localName = element.Name.LocalName;
-            return localName switch
+            while (current.NodeType != XPathNodeType.Root)
             {
-                "stylesheet" or "transform" => false,
-                "attribute-set" or "decimal-format" or "import" or "include" or "key" or "namespace-alias" or "output" or "preserve-space" or "strip-space" => false,
-                "param" or "variable" or "with-param" => false,
-                // Exclude xsl:message to avoid instrumentation conflicts
-                "message" => false,
-                _ => true
-            };
-        }
-
-        var nearestXsltAncestor = element.Ancestors().FirstOrDefault(a => a.Name.Namespace == xsltNamespace);
-        if (nearestXsltAncestor == null)
-        {
-            return false;
-        }
-
-        var ancestorLocal = nearestXsltAncestor.Name.LocalName;
-        if (ancestorLocal is "stylesheet" or "transform")
-        {
-            return false;
-        }
-
-        return true;
-    }
-
-    private static int? GetLineNumber(XElement element)
-    {
-        if (element is IXmlLineInfo info && info.HasLineInfo())
-        {
-            return info.LineNumber;
-        }
-        return null;
-    }
-
-    private static bool CanInsertAsFirstChild(XElement element, bool isXsltElement)
-    {
-        if (element == null)
-        {
-            return false;
-        }
-
-        if (!isXsltElement)
-        {
-            return false;
-        }
-
-        var parent = element.Parent;
-        var localName = element.Name.LocalName;
-
-        if (InlineInstrumentationTargets.Contains(localName))
-        {
-            return true;
-        }
-
-        if (parent != null)
-        {
-            var parentLocal = parent.Name.LocalName;
-            if (string.Equals(parentLocal, "stylesheet", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(parentLocal, "transform", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(parentLocal, "choose", StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        if (element.IsEmpty)
-        {
-            return false;
-        }
-
-        if (ElementsDisallowingChildInstrumentation.Contains(localName))
-        {
-            return false;
-        }
-
-        return true;
-    }
-
-    private static void InstrumentVariables(XDocument doc)
-    {
-        if (doc.Root == null)
-        {
-            return;
-        }
-
-        var xsltNamespace = doc.Root.Name.Namespace;
-
-        // Find all xsl:variable and xsl:param elements
-        var variables = doc
-            .Descendants()
-            .Where(e => e.Name.Namespace == xsltNamespace &&
-                       (e.Name.LocalName == "variable" || e.Name.LocalName == "param"))
-            .Where(e => e.Attribute("name") != null)
-            .Where(e => !IsTopLevelDeclaration(e, xsltNamespace))
-            .ToList();
-
-        if (XsltEngineManager.IsLogEnabled)
-        {
-            XsltEngineManager.NotifyOutput($"[debug] Instrumenting {variables.Count} variable(s) for debugging");
-        }
-
-        // Group variables by parent to handle templates correctly
-        // In XSLT 1.0, ALL params and variables must come first in a template
-        var groupedByParent = variables.GroupBy(v => v.Parent).ToList();
-
-        foreach (var group in groupedByParent)
-        {
-            var parent = group.Key;
-            if (parent == null) continue;
-
-            // Collect safe variables in this group
-            var safeVars = new List<(XElement element, string name)>();
-            foreach (var variable in group)
-            {
-                var varName = variable.Attribute("name")?.Value;
-                if (string.IsNullOrEmpty(varName))
+                switch (current.NodeType)
                 {
-                    continue;
-                }
-
-                if (!IsSafeToInstrumentVariable(variable, xsltNamespace))
-                {
-                    if (XsltEngineManager.IsLogEnabled)
+                    case XPathNodeType.Element:
                     {
-                        XsltEngineManager.NotifyOutput($"[debug]   Skipped unsafe instrumentation: ${varName}");
+                        var position = 1;
+                        var sibling = current.Clone();
+                        while (sibling.MoveToPrevious())
+                        {
+                            if (sibling.Name == current.Name)
+                            {
+                                position++;
+                            }
+                        }
+
+                        pathParts.Insert(0, $"{current.Name}[{position}]");
+                        break;
                     }
-                    continue;
+                    case XPathNodeType.Attribute:
+                    {
+                        pathParts.Insert(0, $"@{current.Name}");
+                        break;
+                    }
+                    case XPathNodeType.Text:
+                    {
+                        pathParts.Insert(0, "text()");
+                        break;
+                    }
+                    default:
+                        pathParts.Insert(0, current.NodeType.ToString());
+                        break;
                 }
 
-                safeVars.Add((variable, varName));
-            }
-
-            if (safeVars.Count == 0) continue;
-
-            // Find the last param/variable in this parent
-            // This ensures we insert AFTER all params/variables, not between them
-            var lastParamOrVar = parent.Elements()
-                .Where(e => e.Name.Namespace == xsltNamespace &&
-                           (e.Name.LocalName == "param" || e.Name.LocalName == "variable"))
-                .LastOrDefault();
-
-            if (lastParamOrVar == null) continue;
-
-            // Insert debug messages for each variable, but AFTER the last param/variable
-            foreach (var (variable, varName) in safeVars)
-            {
-                var debugMessage = new XElement(
-                    xsltNamespace + "message",
-                    new XElement(xsltNamespace + "text", $"[DBG] {varName} "),
-                    new XElement(xsltNamespace + "value-of", new XAttribute("select", $"${varName}"))
-                );
-
-                // Insert after the last param/variable, not after each one
-                lastParamOrVar.AddAfterSelf(debugMessage);
-                // Update lastParamOrVar so next message goes after this one
-                lastParamOrVar = debugMessage;
-
-                if (XsltEngineManager.IsLogEnabled)
+                if (!current.MoveToParent())
                 {
-                    XsltEngineManager.NotifyOutput($"[debug]   Instrumented variable: ${varName}");
+                    break;
                 }
             }
-        }
-    }
 
-    private static bool IsSafeToInstrumentVariable(XElement variable, XNamespace xsltNamespace)
-    {
-        var parent = variable.Parent;
-        if (parent == null)
+            return pathParts.Count > 0 ? "/" + string.Join("/", pathParts) : "/";
+        }
+        catch
         {
-            return false;
+            return "/";
         }
-
-        if (HasFragileAncestor(variable, xsltNamespace))
-        {
-            return false;
-        }
-
-        var parentLocalName = parent.Name.LocalName;
-        var parentIsXslt = parent.Name.Namespace == xsltNamespace;
-
-        if (parentIsXslt)
-        {
-            switch (parentLocalName)
-            {
-                case "attribute":
-                case "comment":
-                case "processing-instruction":
-                case "namespace":
-                case "output":
-                case "key":
-                case "decimal-format":
-                case "character-map":
-                case "variable":
-                case "param":
-                case "with-param":
-                    return false;
-            }
-        }
-
-        // Don't instrument variables inside xsl:attribute
-        var attributeAncestor = variable.Ancestors()
-            .FirstOrDefault(a => a.Name.Namespace == xsltNamespace &&
-                                 a.Name.LocalName == "attribute");
-        if (attributeAncestor != null)
-        {
-            return false;
-        }
-
-        return true;
-    }
-
-    private static bool IsTopLevelDeclaration(XElement element, XNamespace xsltNamespace)
-    {
-        // Check if this is a top-level variable/param (direct child of stylesheet/transform)
-        var parent = element.Parent;
-        if (parent != null && parent.Name.Namespace == xsltNamespace)
-        {
-            var parentLocal = parent.Name.LocalName;
-            if (parentLocal == "stylesheet" || parentLocal == "transform")
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static bool HasFragileAncestor(XElement element, XNamespace xsltNamespace)
-    {
-        // For XSLT 1.0, we have fewer fragile contexts than XSLT 2.0/3.0
-        // Main concerns: attribute generation, key/sort contexts
-        return element.Ancestors()
-            .Any(a => a.Name.Namespace == xsltNamespace &&
-                      (a.Name.LocalName == "attribute" ||
-                       a.Name.LocalName == "comment" ||
-                       a.Name.LocalName == "processing-instruction" ||
-                       a.Name.LocalName == "namespace"));
     }
 
     private static List<string> ExtractUsingStatements(string code)
@@ -875,7 +701,9 @@ public class XsltCompiledEngine : IXsltEngine
             "using System.Text;",
             "using System.Xml;",
             "using System.Xml.XPath;",
-            "using System.Xml.Xsl;"
+            "using System.Xml.Xsl;",
+            "using XsltDebugger.DebugAdapter;",
+            "using static XsltDebugger.DebugAdapter.InlineXsltLogger;"
         };
 
         var existingUsings = ExtractUsingStatements(classCode);
@@ -883,14 +711,34 @@ public class XsltCompiledEngine : IXsltEngine
             requiredUsings.Where(u => !existingUsings.Contains(u, StringComparer.OrdinalIgnoreCase)));
 
         var sourceCode = string.Concat(prelude, Environment.NewLine, classCode);
+
+        // Instrument inline C# methods when debugging is enabled
+        if (XsltEngineManager.DebugEnabled)
+        {
+            sourceCode = InlineCSharpInstrumenter.Instrument(sourceCode);
+        }
+
         var syntaxTree = Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText(sourceCode);
         var references = new List<MetadataReference>
         {
             MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
             MetadataReference.CreateFromFile(typeof(XsltArgumentList).Assembly.Location),
             MetadataReference.CreateFromFile(typeof(System.Xml.XmlDocument).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(System.Linq.Enumerable).Assembly.Location)
+            MetadataReference.CreateFromFile(typeof(System.Linq.Enumerable).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(System.Runtime.GCSettings).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(XsltEngineManager).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(InlineXsltLogger).Assembly.Location)
         };
+
+        var coreLibDirectory = Path.GetDirectoryName(typeof(object).Assembly.Location);
+        if (!string.IsNullOrEmpty(coreLibDirectory))
+        {
+            var runtimeAssemblyPath = Path.Combine(coreLibDirectory, "System.Runtime.dll");
+            if (File.Exists(runtimeAssemblyPath))
+            {
+                references.Add(MetadataReference.CreateFromFile(runtimeAssemblyPath));
+            }
+        }
         var compilation = Microsoft.CodeAnalysis.CSharp.CSharpCompilation.Create(
             "InlineXsltExtAssembly",
             new[] { syntaxTree },
@@ -906,18 +754,22 @@ public class XsltCompiledEngine : IXsltEngine
 
         ms.Seek(0, SeekOrigin.Begin);
         var assembly = Assembly.Load(ms.ToArray());
-        Type? chosen = null;
-        foreach (var t in assembly.GetTypes())
-        {
-            var methods = t.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly);
-            if (methods.Length > 0)
-            {
-                chosen = t;
-                break;
-            }
-        }
+        var allTypes = assembly.GetTypes();
+        var usableTypes = allTypes
+            .Where(t =>
+                !t.IsAbstract &&
+                !t.IsInterface &&
+                !t.IsGenericType &&
+                !t.IsGenericTypeDefinition &&
+                !Attribute.IsDefined(t, typeof(System.Runtime.CompilerServices.CompilerGeneratedAttribute), inherit: false))
+            .ToList();
 
-        chosen ??= assembly.GetTypes().FirstOrDefault(t => !t.IsNested);
+        Type? chosen = usableTypes
+            .FirstOrDefault(t => t.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly).Length > 0)
+            ?? usableTypes.FirstOrDefault(t => !t.IsNested)
+            ?? usableTypes.FirstOrDefault()
+            ?? allTypes.FirstOrDefault(t => !t.IsAbstract && !t.IsInterface);
+
         if (chosen == null)
         {
             throw new Exception("Compiled assembly does not contain a usable type for XSLT extension.");

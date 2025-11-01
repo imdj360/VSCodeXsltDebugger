@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <items>
+    <item>First</item>
+    <item>Second</item>
+    <item>Third</item>
+  </items>
+  <sorted>
+    <item priority="1">Low</item>
+    <item priority="3">High</item>
+    <item priority="2">Medium</item>
+  </sorted>
+</root>
