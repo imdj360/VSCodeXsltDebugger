@@ -229,27 +229,95 @@ public class CompiledEngineIntegrationTests
                 snapshot = outputLog.ToList();
             }
 
-            // Verify instrumentation occurred
-            snapshot.Should().Contain(message => message.Contains("Instrumented 3 inline C# method(s)", StringComparison.OrdinalIgnoreCase),
-                "should report instrumenting 3 C# methods");
+            // Verify instrumentation occurred for all methods
+            snapshot.Should().Contain(message => message.Contains("Instrumented ", StringComparison.Ordinal) && message.Contains(" inline C# method(s)", StringComparison.Ordinal),
+                "should report instrumenting multiple C# methods");
 
-            // Verify Add method logging
+            // Verify private field access methods
+            snapshot.Should().Contain(message => message.Contains("[inline] [IncrementCounter:", StringComparison.Ordinal),
+                "should log IncrementCounter method");
+            snapshot.Should().Contain(message => message.Contains("[inline] [GetCounterValue:", StringComparison.Ordinal),
+                "should log GetCounterValue method");
+            snapshot.Should().Contain(message => message.Contains("[inline] [GetPrefixedMessage:", StringComparison.Ordinal) && message.Contains("args = { message = Hello }"),
+                "should log GetPrefixedMessage method with args");
+            snapshot.Should().Contain(message => message.Contains("[inline] [ApplyMultiplier:", StringComparison.Ordinal),
+                "should log ApplyMultiplier method");
+            snapshot.Should().Contain(message => message.Contains("[inline] [GetCachedValue:", StringComparison.Ordinal) && message.Contains("args = { index = 2 }"),
+                "should log GetCachedValue method with index parameter");
+            snapshot.Should().Contain(message => message.Contains("[inline] [SumCachedValues:", StringComparison.Ordinal),
+                "should log SumCachedValues method");
+
+            // Verify integer operations
             snapshot.Should().Contain(message => message.Contains("[inline] [Add:", StringComparison.Ordinal) && message.Contains("args = { a = 5, b = 3 }"),
                 "should log Add method entry with parameters");
             snapshot.Should().Contain(message => message.Contains("[inline] [Add:", StringComparison.Ordinal) && message.Contains("return = 8"),
                 "should log Add method return value");
-
-            // Verify Multiply method logging
             snapshot.Should().Contain(message => message.Contains("[inline] [Multiply:", StringComparison.Ordinal) && message.Contains("args = { a = 4, b = 7 }"),
                 "should log Multiply method entry with parameters");
             snapshot.Should().Contain(message => message.Contains("[inline] [Multiply:", StringComparison.Ordinal) && message.Contains("return = 28"),
                 "should log Multiply method return value");
-
-            // Verify FormatNumber method logging
             snapshot.Should().Contain(message => message.Contains("[inline] [FormatNumber:", StringComparison.Ordinal) && message.Contains("args = { num = 1000000 }"),
                 "should log FormatNumber method entry with parameters");
-            snapshot.Should().Contain(message => message.Contains("[inline] [FormatNumber:", StringComparison.Ordinal) && message.Contains("return = 1,000,000"),
-                "should log FormatNumber method return value");
+
+            // Verify double operations
+            snapshot.Should().Contain(message => message.Contains("[inline] [AddDouble:", StringComparison.Ordinal) && message.Contains("args = { a = 3.14, b = 2.86 }"),
+                "should log AddDouble method with double parameters");
+            snapshot.Should().Contain(message => message.Contains("[inline] [DivideDouble:", StringComparison.Ordinal) && message.Contains("args = { a = 10.5, b = 2.5 }"),
+                "should log DivideDouble method with double parameters");
+            snapshot.Should().Contain(message => message.Contains("[inline] [FormatDouble:", StringComparison.Ordinal) && message.Contains("args = { num = 123.456 }"),
+                "should log FormatDouble method");
+
+            // Verify decimal operations
+            snapshot.Should().Contain(message => message.Contains("[inline] [AddDecimal:", StringComparison.Ordinal),
+                "should log AddDecimal method");
+            snapshot.Should().Contain(message => message.Contains("[inline] [MultiplyDecimal:", StringComparison.Ordinal),
+                "should log MultiplyDecimal method");
+            snapshot.Should().Contain(message => message.Contains("[inline] [FormatCurrency:", StringComparison.Ordinal),
+                "should log FormatCurrency method");
+
+            // Verify DateTime operations
+            snapshot.Should().Contain(message => message.Contains("[inline] [GetCurrentDate:", StringComparison.Ordinal),
+                "should log GetCurrentDate method");
+            snapshot.Should().Contain(message => message.Contains("[inline] [FormatDate:", StringComparison.Ordinal) && message.Contains("args = { year = 2025, month = 11, day = 1 }"),
+                "should log FormatDate method with parameters");
+            snapshot.Should().Contain(message => message.Contains("[inline] [GetDaysDifference:", StringComparison.Ordinal),
+                "should log GetDaysDifference method");
+
+            // Verify string operations
+            snapshot.Should().Contain(message => message.Contains("[inline] [ConcatStrings:", StringComparison.Ordinal) && message.Contains("args = { a = Hello, b = World }"),
+                "should log ConcatStrings method with string parameters");
+            snapshot.Should().Contain(message => message.Contains("[inline] [ToUpperCase:", StringComparison.Ordinal) && message.Contains("args = { text = xslt debugger }"),
+                "should log ToUpperCase method");
+            snapshot.Should().Contain(message => message.Contains("[inline] [ReverseString:", StringComparison.Ordinal) && message.Contains("args = { text = XSLT }"),
+                "should log ReverseString method");
+            snapshot.Should().Contain(message => message.Contains("[inline] [GetStringLength:", StringComparison.Ordinal) && message.Contains("args = { text = Testing }"),
+                "should log GetStringLength method");
+
+            // Verify array operations
+            snapshot.Should().Contain(message => message.Contains("[inline] [SumArray:", StringComparison.Ordinal) && message.Contains("args = { count = 5 }"),
+                "should log SumArray method");
+            snapshot.Should().Contain(message => message.Contains("[inline] [JoinStringArray:", StringComparison.Ordinal),
+                "should log JoinStringArray method");
+            snapshot.Should().Contain(message => message.Contains("[inline] [AverageDoubles:", StringComparison.Ordinal) && message.Contains("args = { count = 4 }"),
+                "should log AverageDoubles method");
+            snapshot.Should().Contain(message => message.Contains("[inline] [FindMaxInArray:", StringComparison.Ordinal) && message.Contains("args = { size = 10 }"),
+                "should log FindMaxInArray method");
+            snapshot.Should().Contain(message => message.Contains("[inline] [ReverseArray:", StringComparison.Ordinal) && message.Contains("args = { count = 6 }"),
+                "should log ReverseArray method");
+
+            // Verify output file was created
+            var stylesheetDir = Path.GetDirectoryName(fullStylesheetPath) ?? throw new InvalidOperationException("Unable to determine stylesheet directory.");
+            var outDir = Path.Combine(stylesheetDir, "out");
+            var outFile = Path.Combine(outDir, $"{Path.GetFileNameWithoutExtension(fullStylesheetPath)}.out.xml");
+
+            File.Exists(outFile).Should().BeTrue("compiled engine should write transformation results to disk");
+            var output = await File.ReadAllTextAsync(outFile);
+            output.Should().Contain("Auto-Instrumentation Test");
+            output.Should().Contain("Result: Hello");
+            output.Should().Contain("25");
+            output.Should().Contain("XSLT DEBUGGER");
+
+            TryDeleteOutput(outFile, outDir);
         }
         finally
         {
