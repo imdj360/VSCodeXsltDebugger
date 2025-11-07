@@ -1,0 +1,80 @@
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background gradient -->
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#512BD4;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#7B3FF2;stop-opacity:1" />
+    </linearGradient>
+    <filter id="shadow">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+
+  <!-- Main background with rounded corners -->
+  <rect x="10" y="10" width="236" height="236" rx="40" fill="url(#bgGradient)"/>
+
+  <!-- Logic Apps text badge (top) -->
+  <g filter="url(#shadow)">
+    <rect x="60" y="45" width="136" height="42" rx="21" fill="#0078D4"/>
+    <text x="128" y="73"
+          font-family="Arial, sans-serif"
+          font-size="20"
+          font-weight="bold"
+          fill="white"
+          text-anchor="middle">Logic Apps</text>
+  </g>
+
+  <!-- XSLT/XML bracket symbols with XSL -->
+  <g filter="url(#shadow)">
+    <!-- Left angle bracket < -->
+    <path d="M 85 110 L 60 138 L 85 166"
+          stroke="white"
+          stroke-width="12"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          fill="none"/>
+
+    <!-- Right angle bracket > -->
+    <path d="M 171 110 L 196 138 L 171 166"
+          stroke="white"
+          stroke-width="12"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          fill="none"/>
+
+    <!-- XSL text in the middle -->
+    <text x="128" y="145"
+          font-family="Arial, sans-serif"
+          font-size="32"
+          font-weight="bold"
+          fill="white"
+          text-anchor="middle">XSL</text>
+  </g>
+
+  <!-- .NET Badge at bottom -->
+  <g filter="url(#shadow)">
+    <rect x="85" y="180" width="86" height="38" rx="19" fill="white"/>
+    <text x="128" y="205"
+          font-family="Arial, sans-serif"
+          font-size="20"
+          font-weight="bold"
+          fill="#512BD4"
+          text-anchor="middle">.NET</text>
+  </g>
+
+  <!-- Debug breakpoint circle (bottom right) -->
+  <circle cx="200" cy="200" r="28" fill="#DC2626" filter="url(#shadow)"/>
+  <circle cx="200" cy="200" r="23" fill="#EF4444"/>
+
+  <!-- Bug icon inside breakpoint -->
+  <g fill="white" transform="translate(200, 200)">
+    <ellipse cx="0" cy="-2" rx="6" ry="8"/>
+    <ellipse cx="0" cy="4" rx="8" ry="6"/>
+    <circle cx="-2" cy="-4" r="1.2" fill="#DC2626"/>
+    <circle cx="2" cy="-4" r="1.2" fill="#DC2626"/>
+    <line x1="-6" y1="-6" x2="-9" y2="-9" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="6" y1="-6" x2="9" y2="-9" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="-8" y1="0" x2="-11" y2="0" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+    <line x1="8" y1="0" x2="11" y2="0" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+  </g>
+</svg>

@@ -6,6 +6,7 @@ All notable changes to the XSLT Debugger extension will be documented in this fi
 
 ### Added
 
+- **New Extension Icon**: Professional icon featuring Logic Apps and .NET branding with XSLT (`< XSL >`) brackets and debug bug symbol.
 - Shared XSLT 1.0 instrumentation helper used by both engines so Saxon can now debug XSLT 1.0 stylesheets that do not rely on `msxsl:script`.
 - Version-aware Saxon pipeline that switches to the 1.0-safe probes while retaining the existing XSLT 2.0/3.0 instrumentation.
 - Integration coverage for the new Saxon 1.0 path (`SaxonEngine_ShouldCaptureVariables_WhenRunningXslt1Stylesheet`) and console smoke tests for both engines.

@@ -4,6 +4,7 @@
   "description": "A VS Code extension for debugging XSLT using a .NET Debug Adapter.",
   "version": "1.0.0",
   "publisher": "DanielJonathan",
+  "icon": "icon.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/imdj360/VSCodeXsltDebugger.git"
