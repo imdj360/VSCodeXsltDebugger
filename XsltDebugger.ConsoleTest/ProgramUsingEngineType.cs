@@ -75,7 +75,8 @@ class ProgramUsingEngineType
 
             // Set breakpoint - detect which file and set appropriate line
             var fullStylesheetPath = Path.GetFullPath(stylesheetPath);
-            int breakpointLine = stylesheetPath.Contains("message-test") ? 9 :
+            int breakpointLine = stylesheetPath.Contains("attribute-message-test") ? 12 :
+                                 stylesheetPath.Contains("message-test") ? 9 :
                                  stylesheetPath.Contains("ShipmentConf3") ? 55 :
                                  stylesheetPath.Contains("VariableLoggingSampleV1") ? 8 :
                                  stylesheetPath.Contains("step-into-test") ? 12 : 26;

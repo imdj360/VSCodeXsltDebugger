@@ -10,22 +10,11 @@ using Saxon.Api;
 
 namespace XsltDebugger.DebugAdapter;
 
-public class SaxonEngine : IXsltEngine
+public class SaxonEngine : BaseXsltEngine
 {
     private const string DebugNamespace = "urn:xslt-debugger";
 
-    private readonly object _sync = new();
-    private List<(string file, int line)> _breakpoints = new();
-    private TaskCompletionSource<bool>? _pauseTcs;
-    private string _currentStylesheet = string.Empty;
-    private bool _nextStepRequested;
-    private StepMode _stepMode = StepMode.Continue;
-    private int _callDepth = 0;
-    private int _targetDepth = 0;
-    private string _currentStopFile = string.Empty;
-    private int _currentStopLine = -1;
-    private string _stepOriginFile = string.Empty;
-    private int _stepOriginLine = -1;
+    // Note: Shared fields moved to BaseXsltEngine (lines 17-28 removed)
     private Processor? _processor;
     private XsltTransformer? _transformer;
 
@@ -50,7 +39,7 @@ public class SaxonEngine : IXsltEngine
     "try","catch","fork","where-populated","assert",
     "accumulator-rule","merge","merge-source","merge-key"
     };
-    public async Task StartAsync(string stylesheet, string xml, bool stopOnEntry)
+    public override async Task StartAsync(string stylesheet, string xml, bool stopOnEntry)
     {
         // Log before scheduling to confirm StartAsync was invoked
         if (XsltEngineManager.TraceEnabled)
@@ -306,7 +295,7 @@ public class SaxonEngine : IXsltEngine
         });
     }
 
-    public Task ContinueAsync()
+    public override Task ContinueAsync()
     {
         lock (_sync)
         {
@@ -318,7 +307,7 @@ public class SaxonEngine : IXsltEngine
         return Task.CompletedTask;
     }
 
-    public Task StepOverAsync()
+    public override Task StepOverAsync()
     {
         lock (_sync)
         {
@@ -333,7 +322,7 @@ public class SaxonEngine : IXsltEngine
         return Task.CompletedTask;
     }
 
-    public Task StepInAsync()
+    public override Task StepInAsync()
     {
         lock (_sync)
         {
@@ -348,7 +337,7 @@ public class SaxonEngine : IXsltEngine
         return Task.CompletedTask;
     }
 
-    public Task StepOutAsync()
+    public override Task StepOutAsync()
     {
         lock (_sync)
         {
@@ -363,16 +352,7 @@ public class SaxonEngine : IXsltEngine
         return Task.CompletedTask;
     }
 
-    public void SetBreakpoints(IEnumerable<(string file, int line)> bps)
-    {
-        var normalized = new List<(string file, int line)>();
-        foreach (var bp in bps)
-        {
-            var f = NormalizePath(bp.file);
-            normalized.Add((f, bp.line));
-        }
-        _breakpoints = normalized;
-    }
+    // Note: SetBreakpoints method moved to BaseXsltEngine
 
     internal void RegisterBreakpointHit(string file, int line, XdmNode? contextNode = null, bool isTemplateEntry = false, bool isTemplateExit = false)
     {
@@ -460,17 +440,7 @@ public class SaxonEngine : IXsltEngine
         }
     }
 
-    private bool IsBreakpointHit(string file, int line)
-    {
-        foreach (var bp in _breakpoints)
-        {
-            if (string.Equals(bp.file, file, StringComparison.OrdinalIgnoreCase) && bp.line == line)
-            {
-                return true;
-            }
-        }
-        return false;
-    }
+    // Note: IsBreakpointHit method moved to BaseXsltEngine
 
     private XPathNavigator? ConvertSaxonNodeToNavigator(XdmNode? context)
     {
@@ -721,20 +691,7 @@ public class SaxonEngine : IXsltEngine
         }
     }
 
-
-    private static string NormalizePath(string path)
-    {
-        var result = path ?? string.Empty;
-        if (!string.IsNullOrWhiteSpace(result))
-        {
-            if (result.StartsWith("file://", StringComparison.OrdinalIgnoreCase))
-            {
-                try { result = new Uri(result).LocalPath; } catch { }
-            }
-            try { result = Path.GetFullPath(result); } catch { }
-        }
-        return result;
-    }
+    // Note: NormalizePath method moved to BaseXsltEngine
 
     private static void ExtractAndRegisterNamespaces(XDocument xdoc)
     {

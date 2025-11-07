@@ -14,7 +14,7 @@ using Saxon.Api;
 
 namespace XsltDebugger.DebugAdapter;
 
-internal enum StepMode
+public enum StepMode
 {
     Continue,   // No stepping, only break on breakpoints
     Into,       // Step into templates/function calls
@@ -22,7 +22,7 @@ internal enum StepMode
     Out         // Run until returning from current depth
 }
 
-public class XsltCompiledEngine : IXsltEngine
+public class XsltCompiledEngine : BaseXsltEngine
 {
     private const string DebugNamespace = "urn:xslt-debugger";
 
@@ -58,6 +58,7 @@ public class XsltCompiledEngine : IXsltEngine
         "sort",
         "message",
         "text",
+        "attribute",  // xsl:attribute can only contain text/value-of, not debug calls
         // Structural control element that only allows xsl:when/xsl:otherwise children
         "choose",
         // XSLT 2.0/3.0 specific elements that don't allow child instrumentation
@@ -67,20 +68,9 @@ public class XsltCompiledEngine : IXsltEngine
         "perform-sort"
     };
 
-    private readonly object _sync = new();
-    private List<(string file, int line)> _breakpoints = new();
-    private TaskCompletionSource<bool>? _pauseTcs;
-    private string _currentStylesheet = string.Empty;
-    private bool _nextStepRequested;
-    private StepMode _stepMode = StepMode.Continue;
-    private int _callDepth = 0;
-    private int _targetDepth = 0;
-    private string _currentStopFile = string.Empty;
-    private int _currentStopLine = -1;
-    private string _stepOriginFile = string.Empty;
-    private int _stepOriginLine = -1;
+    // Note: Shared fields moved to BaseXsltEngine (lines 71-83 removed)
 
-    public async Task StartAsync(string stylesheet, string xml, bool stopOnEntry)
+    public override async Task StartAsync(string stylesheet, string xml, bool stopOnEntry)
     {
         // Run the compiled engine on a background thread to avoid blocking the DAP message loop
         if (XsltEngineManager.TraceEnabled)
@@ -253,7 +243,7 @@ public class XsltCompiledEngine : IXsltEngine
         });
     }
 
-    public Task ContinueAsync()
+    public override Task ContinueAsync()
     {
         lock (_sync)
         {
@@ -265,7 +255,7 @@ public class XsltCompiledEngine : IXsltEngine
         return Task.CompletedTask;
     }
 
-    public Task StepOverAsync()
+    public override Task StepOverAsync()
     {
         lock (_sync)
         {
@@ -280,7 +270,7 @@ public class XsltCompiledEngine : IXsltEngine
         return Task.CompletedTask;
     }
 
-    public Task StepInAsync()
+    public override Task StepInAsync()
     {
         lock (_sync)
         {
@@ -295,7 +285,7 @@ public class XsltCompiledEngine : IXsltEngine
         return Task.CompletedTask;
     }
 
-    public Task StepOutAsync()
+    public override Task StepOutAsync()
     {
         lock (_sync)
         {
@@ -310,16 +300,7 @@ public class XsltCompiledEngine : IXsltEngine
         return Task.CompletedTask;
     }
 
-    public void SetBreakpoints(IEnumerable<(string file, int line)> bps)
-    {
-        var normalized = new List<(string file, int line)>();
-        foreach (var bp in bps)
-        {
-            var f = NormalizePath(bp.file);
-            normalized.Add((f, bp.line));
-        }
-        _breakpoints = normalized;
-    }
+    // Note: SetBreakpoints method moved to BaseXsltEngine
 
     internal void RegisterBreakpointHit(string file, int line, XPathNavigator? contextNode = null, bool isTemplateEntry = false, bool isTemplateExit = false)
     {
@@ -411,17 +392,7 @@ public class XsltCompiledEngine : IXsltEngine
         }
     }
 
-    private bool IsBreakpointHit(string file, int line)
-    {
-        foreach (var bp in _breakpoints)
-        {
-            if (string.Equals(bp.file, file, StringComparison.OrdinalIgnoreCase) && bp.line == line)
-            {
-                return true;
-            }
-        }
-        return false;
-    }
+    // Note: IsBreakpointHit method moved to BaseXsltEngine
 
     private void PauseForBreakpoint(string file, int line, DebugStopReason reason, XPathNavigator? context)
     {
@@ -455,20 +426,7 @@ public class XsltCompiledEngine : IXsltEngine
         }
     }
 
-
-    private static string NormalizePath(string path)
-    {
-        var result = path ?? string.Empty;
-        if (!string.IsNullOrWhiteSpace(result))
-        {
-            if (result.StartsWith("file://", StringComparison.OrdinalIgnoreCase))
-            {
-                try { result = new Uri(result).LocalPath; } catch { }
-            }
-            try { result = Path.GetFullPath(result); } catch { }
-        }
-        return result;
-    }
+    // Note: NormalizePath method moved to BaseXsltEngine
 
     private static void ExtractAndRegisterNamespaces(XDocument xdoc)
     {

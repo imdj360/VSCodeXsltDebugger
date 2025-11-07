@@ -243,7 +243,7 @@ internal static class Xslt1Instrumentation
             return false;
         }
 
-        if (element.Ancestors().Any(a => a.Name.Namespace == xsltNamespace && a.Name.LocalName is "message"))
+        if (element.Ancestors().Any(a => a.Name.Namespace == xsltNamespace && a.Name.LocalName is "message" or "attribute"))
         {
             return false;
         }
@@ -258,6 +258,7 @@ internal static class Xslt1Instrumentation
                 "param" or "variable" or "with-param" => false,
                 "message" => false,
                 "sort" => false,
+                "attribute" => false,  // Don't instrument xsl:attribute itself
                 _ => true
             };
         }
@@ -380,6 +381,8 @@ internal static class Xslt1Instrumentation
 
         if (parentIsXslt)
         {
+            // Check for direct parent contexts that disallow instrumentation
+            // Note: "attribute" is also checked by HasFragileAncestor above (defensive programming)
             switch (parentLocalName)
             {
                 case "attribute":
@@ -395,14 +398,6 @@ internal static class Xslt1Instrumentation
                 case "with-param":
                     return false;
             }
-        }
-
-        var attributeAncestor = variable.Ancestors()
-            .FirstOrDefault(a => a.Name.Namespace == xsltNamespace &&
-                                 a.Name.LocalName == "attribute");
-        if (attributeAncestor != null)
-        {
-            return false;
         }
 
         return true;

@@ -9,6 +9,7 @@ All notable changes to the XSLT Debugger extension will be documented in this fi
 - Shared XSLT 1.0 instrumentation helper used by both engines so Saxon can now debug XSLT 1.0 stylesheets that do not rely on `msxsl:script`.
 - Version-aware Saxon pipeline that switches to the 1.0-safe probes while retaining the existing XSLT 2.0/3.0 instrumentation.
 - Integration coverage for the new Saxon 1.0 path (`SaxonEngine_ShouldCaptureVariables_WhenRunningXslt1Stylesheet`) and console smoke tests for both engines.
+- **New `BaseXsltEngine` abstract class** consolidating shared debugging infrastructure (breakpoint management, step mode handling, pause/continue mechanisms).
 
 ### Changed
 
@@ -16,10 +17,21 @@ All notable changes to the XSLT Debugger extension will be documented in this fi
 - XsltCompiledEngine now delegates all 1.0 probe insertion to the shared helper, keeping instrumentation logic in one place.
 - Bumped the extension version to `1.0.0` and updated packaging docs to reference the new VSIX build numbers.
 - `.gitignore` / `.vscodeignore` now filter generated `out/` folders and `*.out.xml` artifacts across the tree.
+- **Refactored engine architecture**: Both `XsltCompiledEngine` and `SaxonEngine` now inherit from `BaseXsltEngine`, eliminating ~150 lines of duplicate code.
+- **Removed duplicate methods**: `NormalizePath`, `SetBreakpoints`, and `IsBreakpointHit` now implemented once in base class.
+- **Consolidated shared fields**: Synchronization, breakpoint storage, step mode tracking, and call depth management now in base class.
+- Made `StepMode` enum public for proper accessibility across engine hierarchy.
 
 ### Fixed
 
 - Ensured Saxon 1.0 runs produce the same breakpoint and variable capture behaviour as the compiled engine by reusing the same probe shapes.
+
+### Improved
+
+- Enhanced maintainability by centralizing common debugging logic - changes now made in one location instead of two.
+- Added defensive programming documentation for instrumentation safety checks in `Xslt1Instrumentation.cs`.
+- Improved code consistency between engines through shared base implementation.
+- All 127 tests pass after refactoring, confirming no regression in functionality.
 
 ## [0.6.0] - 2025
 

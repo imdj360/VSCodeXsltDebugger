@@ -31,6 +31,8 @@ A powerful Visual Studio Code extension that enables debugging support for XSLT 
 - No support for: **step back**, goto targets, set variable, conditional breakpoints, or debug console autocomplete
 - Variable capture limited to `@select`-based variables; complex variables with content children may not be fully captured
 - Trace logging adds ~5-15% overhead in `trace`/`traceall` modes
+- **Cannot debug inside `xsl:attribute` elements** - attributes are processed atomically; set breakpoints before/after attribute blocks instead
+- **Cannot debug closing tags** (e.g., `</xsl:template>`, `</message>`) - they contain no executable code
 
 **Note**: Step-into for `xsl:call-template` is fully supported (F11).
 
