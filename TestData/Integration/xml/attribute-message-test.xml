@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<orders>
+    <order id="ORD-001" priority="high">
+        <customer>Alice Johnson</customer>
+        <item>Laptop</item>
+        <quantity>2</quantity>
+    </order>
+    <order id="ORD-002" priority="low">
+        <customer>Bob Smith</customer>
+        <item>Mouse</item>
+        <quantity>5</quantity>
+    </order>
+    <order id="ORD-003" priority="high">
+        <customer>Carol White</customer>
+        <item>Keyboard</item>
+        <quantity>3</quantity>
+    </order>
+</orders>
