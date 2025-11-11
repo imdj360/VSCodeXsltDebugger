@@ -174,6 +174,7 @@ public class XsltCompiledEngine : BaseXsltEngine
                 EnsureDebugNamespace(xdoc);
                 Xslt1Instrumentation.InstrumentStylesheet(xdoc, _currentStylesheet, DebugNamespace, addProbeAttribute: false);
                 Xslt1Instrumentation.InstrumentVariables(xdoc, DebugNamespace, addProbeAttribute: false);
+                // Note: XsltCompiledEngine is XSLT 1.0 only, no xsl:function support
 
                 // DEBUG: Save instrumented XSLT for inspection
                 if (XsltEngineManager.IsTraceEnabled)

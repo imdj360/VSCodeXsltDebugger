@@ -2,6 +2,23 @@
 
 All notable changes to the XSLT Debugger extension will be documented in this file.
 
+## [1.0.2] - 2025
+
+### Added
+
+- **XSLT 2.0/3.0 Function Parameter Debugging**: Added `SaxonInstrumentation.cs` helper to instrument `xsl:function` elements with parameter logging.
+- Function parameters are now logged during execution with format: `[function functionName] param1=value1, param2=value2, ...`.
+- For-each loop instrumentation now works correctly with both Saxon and Compiled engines.
+
+### Changed
+
+- Simplified function instrumentation to only log parameters (removed verbose return statement logging).
+- Unified instrumentation approach for XSLT 1.0 across both Saxon and Compiled engines using shared `Xslt1Instrumentation` helper.
+
+### Improved
+
+- Cleaner debug output with reduced verbosity for function calls.
+
 ## [1.0.1] - 2025
 
 ### Added

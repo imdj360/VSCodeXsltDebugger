@@ -8,6 +8,8 @@ vsc-extension-quickstart.md
 package.json.backup
 TestData/**
 docs/**
+BestPractices_Presentation.md
+TEST_README.md
 **/tsconfig.json
 **/eslint.config.mjs
 **/*.map
@@ -103,7 +105,6 @@ XsltDebugger.sln
 sample/**
 .claude/**
 tools/**
-changelog.md
 package-clean.sh
 
 # Test projects

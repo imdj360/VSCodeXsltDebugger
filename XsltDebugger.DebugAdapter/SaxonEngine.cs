@@ -157,6 +157,8 @@ public class SaxonEngine : BaseXsltEngine
                     {
                         InstrumentStylesheet(xdoc);
                         InstrumentVariables(xdoc);
+                        // XSLT 2.0/3.0 only: Instrument functions (not available in XSLT 1.0)
+                        SaxonInstrumentation.InstrumentFunctions(xdoc, DebugNamespace, addProbeAttribute: true);
                         if (XsltEngineManager.IsLogEnabled)
                         {
                             XsltEngineManager.NotifyOutput("Debugging enabled for XSLT 2.0/3.0.");

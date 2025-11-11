@@ -25,9 +25,9 @@
   <!-- Lenient parse: try xs:dateTime($s); if that fails, try xs:date($s)||'T00:00:00' -->
   <xsl:function name="f:to-datetime" as="xs:dateTime?">
     <xsl:param name="s" as="xs:string?" />
-    <xsl:variable name="res">
+    <xsl:variable name="res" as="xs:dateTime?">
       <xsl:choose>
-        <xsl:when test="empty($s)" />
+        <xsl:when test="empty($s) or $s = ''" />
         <xsl:otherwise>
           <xsl:try>
             <xsl:sequence select="xs:dateTime($s)" />
