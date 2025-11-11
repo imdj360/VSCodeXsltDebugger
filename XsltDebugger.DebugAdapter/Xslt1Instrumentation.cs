@@ -65,8 +65,10 @@ internal static class Xslt1Instrumentation
             if (isForEach)
             {
                 var selectAttr = element.Attribute("select")?.Value ?? "(none)";
+                // Include line number in variable name to make each for-each unique (prevents nested loops from overwriting)
+                var forEachVarName = $"for-each-{line!.Value}";
                 forEachMessage = new XElement(xsltNamespace + "message",
-                    new XElement(xsltNamespace + "text", $"[DBG] for-each line={line!.Value} select={selectAttr} pos="),
+                    new XElement(xsltNamespace + "text", $"[DBG] {forEachVarName} line={line!.Value} select={selectAttr} pos="),
                     new XElement(xsltNamespace + "value-of", new XAttribute("select", "position()")));
 
                 if (addProbeAttribute)

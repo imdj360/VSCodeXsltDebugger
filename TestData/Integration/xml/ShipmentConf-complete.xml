@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ShipmentConfirmation>
+  <Reference>REF-12345</Reference>
+  <TransportTypeCode>TRK</TransportTypeCode>
+  <TransportTypeDescription>Truck</TransportTypeDescription>
+  <TransportMode>Road</TransportMode>
+  <Direction>Inbound</Direction>
+  <LicensePlate>ABC-123</LicensePlate>
+  <Status>Completed</Status>
+  <Arrival>2025-10-15T08:00:00</Arrival>
+  <Departure>2025-10-15T16:30:00</Departure>
+  <Net>1500.50</Net>
+  <Orders>
+    <Number>ORD-001</Number>
+    <Date>2025-10-14</Date>
+    <CustomerCode>CUST-100</CustomerCode>
+    <CustomerName>Acme Corporation</CustomerName>
+    <OrderItems>
+      <Sequence>1</Sequence>
+      <OperationName>Loading</OperationName>
+      <OperationCode>LOAD</OperationCode>
+      <OperationReports>
+        <ReportInfo>
+          <OperationReportDate>2025-10-15T10:30:00</OperationReportDate>
+        </ReportInfo>
+        <ReportInfo>
+          <OperationReportDate>2025-10-15T12:00:00</OperationReportDate>
+        </ReportInfo>
+      </OperationReports>
+    </OrderItems>
+    <OrderItems>
+      <Sequence>2</Sequence>
+      <OperationName>Unloading</OperationName>
+      <OperationCode>UNLOAD</OperationCode>
+      <OperationReports>
+        <ReportInfo>
+          <OperationReportDate>2025-10-15T14:00:00</OperationReportDate>
+        </ReportInfo>
+      </OperationReports>
+    </OrderItems>
+  </Orders>
+</ShipmentConfirmation>

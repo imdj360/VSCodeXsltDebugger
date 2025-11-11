@@ -489,26 +489,24 @@ public class CompiledEngineIntegrationTests
             }
 
             // Verify for-each position logging for simple loop (line 10)
-            snapshot.Should().Contain(message => message.Contains("[xsl:message] [DBG] for-each line=10", StringComparison.Ordinal) && message.Contains("select=/root/items/item", StringComparison.Ordinal) && message.Contains("pos=1", StringComparison.Ordinal),
+            snapshot.Should().Contain(message => message.Contains("[xsl:message] [DBG] for-each-10 line=10", StringComparison.Ordinal) && message.Contains("select=/root/items/item", StringComparison.Ordinal) && message.Contains("pos=1", StringComparison.Ordinal),
                 "should log position 1 for first iteration");
-            snapshot.Should().Contain(message => message.Contains("[xsl:message] [DBG] for-each line=10", StringComparison.Ordinal) && message.Contains("pos=2", StringComparison.Ordinal),
+            snapshot.Should().Contain(message => message.Contains("[xsl:message] [DBG] for-each-10 line=10", StringComparison.Ordinal) && message.Contains("pos=2", StringComparison.Ordinal),
                 "should log position 2 for second iteration");
-            snapshot.Should().Contain(message => message.Contains("[xsl:message] [DBG] for-each line=10", StringComparison.Ordinal) && message.Contains("pos=3", StringComparison.Ordinal),
+            snapshot.Should().Contain(message => message.Contains("[xsl:message] [DBG] for-each-10 line=10", StringComparison.Ordinal) && message.Contains("pos=3", StringComparison.Ordinal),
                 "should log position 3 for third iteration");
 
             // Verify for-each variable was captured
-            // Note: The variable will contain the LAST for-each that executed
-            // Since this test file has two for-each loops, it will be line 17 (the second one)
-            XsltEngineManager.Variables.Should().ContainKey("for-each");
-            XsltEngineManager.Variables["for-each"].Should().NotBeNull();
-            var forEachValue = XsltEngineManager.Variables["for-each"]!.ToString();
-            (forEachValue.Contains("line=10") || forEachValue.Contains("line=17")).Should().BeTrue(
-                "for-each variable should contain either line 10 or line 17");
+            // Note: With line numbers appended, BOTH for-each loops are now captured separately (no overwriting!)
+            XsltEngineManager.Variables.Should().ContainKey("for-each-10", "line 10 for-each should be captured");
+            XsltEngineManager.Variables["for-each-10"].Should().NotBeNull();
+            XsltEngineManager.Variables["for-each-10"]!.ToString().Should().Contain("line=10");
+            XsltEngineManager.Variables["for-each-10"]!.ToString().Should().Contain("select=/root/items/item");
 
             // Verify variable capture logging occurred (should see captures for BOTH loops)
-            snapshot.Should().Contain(message => message.Contains("Captured variable: $for-each", StringComparison.Ordinal) && message.Contains("line=10"),
+            snapshot.Should().Contain(message => message.Contains("Captured variable: $for-each-10", StringComparison.Ordinal) && message.Contains("line=10"),
                 "should log variable capture for line 10 for-each");
-            snapshot.Should().Contain(message => message.Contains("Captured variable: $for-each", StringComparison.Ordinal) && message.Contains("line=17"),
+            snapshot.Should().Contain(message => message.Contains("Captured variable: $for-each-17", StringComparison.Ordinal) && message.Contains("line=17"),
                 "should log variable capture for line 17 for-each");
         }
         finally
@@ -561,18 +559,18 @@ public class CompiledEngineIntegrationTests
             }
 
             // Verify for-each position logging for loop with sort (line 17)
-            snapshot.Should().Contain(message => message.Contains("[xsl:message] [DBG] for-each line=17", StringComparison.Ordinal) && message.Contains("select=/root/sorted/item", StringComparison.Ordinal) && message.Contains("pos=1", StringComparison.Ordinal),
+            snapshot.Should().Contain(message => message.Contains("[xsl:message] [DBG] for-each-17 line=17", StringComparison.Ordinal) && message.Contains("select=/root/sorted/item", StringComparison.Ordinal) && message.Contains("pos=1", StringComparison.Ordinal),
                 "should log position 1 for first iteration (after sort)");
-            snapshot.Should().Contain(message => message.Contains("[xsl:message] [DBG] for-each line=17", StringComparison.Ordinal) && message.Contains("pos=2", StringComparison.Ordinal),
+            snapshot.Should().Contain(message => message.Contains("[xsl:message] [DBG] for-each-17 line=17", StringComparison.Ordinal) && message.Contains("pos=2", StringComparison.Ordinal),
                 "should log position 2 for second iteration (after sort)");
-            snapshot.Should().Contain(message => message.Contains("[xsl:message] [DBG] for-each line=17", StringComparison.Ordinal) && message.Contains("pos=3", StringComparison.Ordinal),
+            snapshot.Should().Contain(message => message.Contains("[xsl:message] [DBG] for-each-17 line=17", StringComparison.Ordinal) && message.Contains("pos=3", StringComparison.Ordinal),
                 "should log position 3 for third iteration (after sort)");
 
             // Verify for-each variable was captured (will contain the last iteration's value)
-            XsltEngineManager.Variables.Should().ContainKey("for-each");
-            XsltEngineManager.Variables["for-each"].Should().NotBeNull();
-            XsltEngineManager.Variables["for-each"]!.ToString().Should().Contain("line=17");
-            XsltEngineManager.Variables["for-each"]!.ToString().Should().Contain("select=/root/sorted/item");
+            XsltEngineManager.Variables.Should().ContainKey("for-each-17");
+            XsltEngineManager.Variables["for-each-17"].Should().NotBeNull();
+            XsltEngineManager.Variables["for-each-17"]!.ToString().Should().Contain("line=17");
+            XsltEngineManager.Variables["for-each-17"]!.ToString().Should().Contain("select=/root/sorted/item");
         }
         finally
         {
@@ -624,24 +622,25 @@ public class CompiledEngineIntegrationTests
             }
 
             // Verify for-each position logging for outer loop (line 60)
-            snapshot.Should().Contain(message => message.Contains("[xsl:message] [DBG] for-each line=60", StringComparison.Ordinal) && message.Contains("select=/ShipmentConfirmation/Orders/OrderItems", StringComparison.Ordinal),
+            snapshot.Should().Contain(message => message.Contains("[xsl:message] [DBG] for-each-60 line=60", StringComparison.Ordinal) && message.Contains("select=/ShipmentConfirmation/Orders/OrderItems", StringComparison.Ordinal),
                 "should log position for outer for-each at line 60");
 
             // Verify for-each position logging for nested loop (line 83)
-            snapshot.Should().Contain(message => message.Contains("[xsl:message] [DBG] for-each line=83", StringComparison.Ordinal) && message.Contains("select=OperationReports/ReportInfo/OperationReportDate", StringComparison.Ordinal),
+            snapshot.Should().Contain(message => message.Contains("[xsl:message] [DBG] for-each-83 line=83", StringComparison.Ordinal) && message.Contains("select=OperationReports/ReportInfo/OperationReportDate", StringComparison.Ordinal),
                 "should log position for nested for-each at line 83");
 
             // Verify the existing xsl:message at line 67 is still present
             snapshot.Should().Contain(message => message.Contains("[xsl:message] Hello", StringComparison.Ordinal),
                 "should preserve existing xsl:message elements");
 
-            // Verify for-each variable was captured
-            XsltEngineManager.Variables.Should().ContainKey("for-each");
-            XsltEngineManager.Variables["for-each"].Should().NotBeNull();
-            // The variable will contain the last for-each that executed (could be line 60 or line 83)
-            var forEachValue = XsltEngineManager.Variables["for-each"]!.ToString();
-            (forEachValue.Contains("line=60") || forEachValue.Contains("line=83")).Should().BeTrue(
-                "for-each variable should contain either line 60 or line 83");
+            // Verify BOTH for-each variables were captured separately (no overwriting with line numbers!)
+            XsltEngineManager.Variables.Should().ContainKey("for-each-60", "outer for-each at line 60 should be captured");
+            XsltEngineManager.Variables["for-each-60"].Should().NotBeNull();
+            XsltEngineManager.Variables["for-each-60"]!.ToString().Should().Contain("line=60");
+
+            XsltEngineManager.Variables.Should().ContainKey("for-each-83", "nested for-each at line 83 should be captured");
+            XsltEngineManager.Variables["for-each-83"].Should().NotBeNull();
+            XsltEngineManager.Variables["for-each-83"]!.ToString().Should().Contain("line=83");
         }
         finally
         {

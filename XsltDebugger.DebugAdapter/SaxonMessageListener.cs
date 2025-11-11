@@ -31,6 +31,7 @@ internal sealed class SaxonMessageListener : IMessageListener2
     {
         // Expected format: "[DBG] variableName value"
         // or sequence format: "[DBG] variableName value" (from xsl:message select="('[DBG]', 'varName', string($var))")
+        // Function parameters format: "[function functionName] param paramName value" (informational only, not captured)
 
         if (string.IsNullOrWhiteSpace(messageText))
         {
@@ -38,6 +39,12 @@ internal sealed class SaxonMessageListener : IMessageListener2
         }
 
         var trimmed = messageText.Trim();
+
+        // Skip function parameter messages (start with "[function")
+        if (trimmed.StartsWith("[function", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
 
         // Handle sequence format: "[DBG] variableName value"
         if (trimmed.StartsWith("[DBG]", StringComparison.OrdinalIgnoreCase))

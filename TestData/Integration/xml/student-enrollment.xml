@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Student xmlns="http://StudentEnrollment.Student">
+  <FirstName>John</FirstName>
+  <MiddleInitial>A</MiddleInitial>
+  <LastName>Smith</LastName>
+  <DateOfBirth>2000-05-15</DateOfBirth>
+  <Address>
+    <StreetAddress>123 Main Street</StreetAddress>
+    <City>Springfield</City>
+    <State>il</State>
+    <Zip>62701</Zip>
+    <ContactType>Mobile</ContactType>
+    <Contact>555-1234</Contact>
+  </Address>
+</Student>
