@@ -746,6 +746,9 @@ public class SaxonEngine : BaseXsltEngine
         }
     }
 
+    // Elements that are fragile for breakpoint AND variable instrumentation
+    // Note: "function" blocks variable/param capture because inserting xsl:message
+    // between params and return value violates XSLT spec for functions
     private static readonly HashSet<string> FragileAnywhere = new(StringComparer.OrdinalIgnoreCase)
     {
         "function",
@@ -1177,9 +1180,11 @@ public class SaxonEngine : BaseXsltEngine
             {
                 var selectAttr = element.Attribute("select")?.Value ?? string.Empty;
                 var safeSelect = string.IsNullOrWhiteSpace(selectAttr) ? "(none)" : EscapeApostrophes(selectAttr.Trim());
-                var loopLabel = string.Equals(localName, "for-each-group", StringComparison.OrdinalIgnoreCase)
+                var loopBase = string.Equals(localName, "for-each-group", StringComparison.OrdinalIgnoreCase)
                     ? "for-each-group"
                     : "for-each";
+                // Include line number in variable name to make each for-each unique (prevents nested loops from overwriting)
+                var loopLabel = $"{loopBase}-{line}";
                 var messageSelect =
                     $"('[DBG]', '{loopLabel}', concat('line={line} select={safeSelect} ', 'pos=', string(position())))";
                 var messageProbe = new XElement(

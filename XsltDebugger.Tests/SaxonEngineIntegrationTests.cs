@@ -401,7 +401,8 @@ public class SaxonEngineIntegrationTests
             exitCode.Should().Be(0);
             log.Should().Contain(message => message.Contains("Instrumenting 15 variable", StringComparison.OrdinalIgnoreCase));
             log.Should().Contain(message => message.Contains("Captured variable: $arrival", StringComparison.OrdinalIgnoreCase));
-            log.Should().Contain(message => message.Contains("Captured variable: $for-each-group", StringComparison.OrdinalIgnoreCase));
+            log.Should().Contain(message => message.Contains("Captured variable: $for-each-group-172", StringComparison.OrdinalIgnoreCase),
+                "for-each-group at line 172 should be captured with line number appended");
 
             File.Exists(outFile).Should().BeTrue("advanced transform should produce output");
             var output = await File.ReadAllTextAsync(outFile);
@@ -424,7 +425,8 @@ public class SaxonEngineIntegrationTests
             exitCode.Should().Be(0);
             log.Should().Contain(message => message.Contains("Instrumenting 24 variable", StringComparison.OrdinalIgnoreCase));
             log.Should().Contain(message => message.Contains("Captured variable: $arrival-raw", StringComparison.OrdinalIgnoreCase));
-            log.Should().Contain(message => message.Contains("Captured variable: $for-each-group", StringComparison.OrdinalIgnoreCase));
+            log.Should().Contain(message => message.Contains("Captured variable: $for-each-group-249", StringComparison.OrdinalIgnoreCase),
+                "for-each-group at line 249 should be captured with line number appended");
             log.Any(message => message.Contains("xsl:accumulator-rule", StringComparison.OrdinalIgnoreCase))
                 .Should().BeFalse("accumulator rules must remain free of instrumentation");
 
