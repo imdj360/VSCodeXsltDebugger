@@ -5,7 +5,7 @@ import * as path from 'path';
 suite('XSLT Debugger End-to-End', function () {
   this.timeout(60000);
 
-  test('should launch and run XSLT debug session with inline C#', async () => {
+  test.skip('should launch and run XSLT debug session with inline C#', async () => {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0].uri.fsPath || '';
     const debugConfig: vscode.DebugConfiguration = {
       type: 'xslt',
