@@ -2,6 +2,12 @@
 
 All notable changes to the XSLT Debugger extension will be documented in this file.
 
+## [1.1.0] - 2026-03-26
+
+### Added
+
+- **LLM skill execution via PostToolUse hook**: The HTTP Transform Bridge enables AI coding assistants (Claude Code, etc.) to automatically trigger XSLT transforms after every stylesheet edit via a `PostToolUse` hook. The full transform output and trace logs are returned synchronously to the LLM, creating a tight feedback loop — edit → run → fix → repeat without human intervention.
+
 ## [1.0.3] - 2026-03-26
 
 ### Added
