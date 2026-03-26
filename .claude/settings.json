@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'FILE=$(echo \"$CLAUDE_TOOL_INPUT\" | jq -r \".file_path // .path // empty\" 2>/dev/null); if [[ \"$FILE\" == *.xslt || \"$FILE\" == *.xsl ]]; then PORT=$(cat ~/.xslt-debugger-port 2>/dev/null); if [[ -n \"$PORT\" ]]; then curl -s -X POST \"http://127.0.0.1:$PORT/run-transform\" -H \"Content-Type: application/json\" -d \"{\\\"stylesheet\\\": \\\"$FILE\\\", \\\"xml\\\": \\\"${FILE%.*}-input.xml\\\"}\"; fi; fi'",
+            "timeout": 60
+          }
+        ]
+      }
+    ]
+  }
+}
