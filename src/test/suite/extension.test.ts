@@ -5,15 +5,15 @@ import * as path from 'path';
 suite('XSLT Debugger End-to-End', function () {
   this.timeout(60000);
 
-  test.skip('should launch and run XSLT debug session with inline C#', async () => {
+  test('should launch and run XSLT debug session with inline C#', async () => {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0].uri.fsPath || '';
     const debugConfig: vscode.DebugConfiguration = {
       type: 'xslt',
       request: 'launch',
       name: 'Debug XSLT (.NET Hybrid)',
-      stylesheet: path.join(workspaceFolder, 'sample', 'sample-inline-cs.xslt'),
-      xml: path.join(workspaceFolder, 'sample', 'sample.xml'),
-      engine: 'xsltcompiled'
+      stylesheet: path.join(workspaceFolder, 'TestData', 'Integration', 'xslt', 'compiled', 'sample-inline-cs.xslt'),
+      xml: path.join(workspaceFolder, 'TestData', 'Integration', 'xml', 'sample.xml'),
+      engine: 'compiled'
     };
 
     let sessionStarted = false;
@@ -49,7 +49,6 @@ suite('XSLT Debugger End-to-End', function () {
 
     assert.ok(sessionStarted, 'Debug session should start');
     assert.ok(sessionTerminated, 'Debug session should terminate');
-    // Optionally check outputReceived for expected result
-    // assert.match(outputReceived, /Hello, World!/);
+    assert.match(outputReceived, /Hello, World!/);
   });
 });
