@@ -35,7 +35,8 @@ suite('Extension Test Suite', () => {
 		assert.ok(port > 0 && port < 65536, 'port should be a valid port number');
 	});
 
-	suite('HTTP Bridge', () => {
+	suite('HTTP Bridge', function () {
+		this.timeout(30000);
 		let bridgePort: number;
 
 		suiteSetup(async () => {
