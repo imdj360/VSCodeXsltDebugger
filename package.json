@@ -17,7 +17,8 @@
   ],
   "activationEvents": [
     "onDebugInitialConfigurations:xslt",
-    "onDebugResolve:xslt"
+    "onDebugResolve:xslt",
+    "onCommand:xslt.runTransform"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -124,7 +125,21 @@
       {
         "language": "xslt"
       }
-    ]
+    ],
+    "commands": [
+      {
+        "command": "xslt.runTransform",
+        "title": "XSLT: Run Transform"
+      }
+    ],
+    "menus": {
+      "editor/title/run": [
+        {
+          "command": "xslt.runTransform",
+          "when": "resourceExtname == .xslt || resourceExtname == .xsl"
+        }
+      ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
