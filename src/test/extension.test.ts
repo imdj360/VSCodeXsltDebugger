@@ -56,6 +56,56 @@ suite('Extension Test Suite', () => {
 			assert.ok(result.body.length > 0, 'response body should contain transform output');
 		});
 
+		test('auto-detects saxonnet when no msxsl:script present', async () => {
+			const port = parseInt(fs.readFileSync(path.join(os.homedir(), '.xslt-debugger-port'), 'utf8'), 10);
+			const stylesheet = path.resolve(__dirname, '../../TestData/Integration/xslt/tests/step-into-test-simple.xslt');
+			const xml = path.resolve(__dirname, '../../TestData/Integration/xml/step-into-test.xml');
+			const body = JSON.stringify({ stylesheet, xml }); // no engine field
+
+			const result = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+				const req = http.request(
+					{ hostname: '127.0.0.1', port, method: 'POST', path: '/run-transform',
+					  headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } },
+					(res) => {
+						let data = '';
+						res.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+						res.on('end', () => resolve({ status: res.statusCode ?? 0, body: data }));
+					}
+				);
+				req.on('error', reject);
+				req.write(body);
+				req.end();
+			});
+
+			assert.strictEqual(result.status, 200);
+			assert.ok(!result.body.includes("Warning: Using 'compiled' engine"), 'should not use compiled engine for plain XSLT 1.0');
+		});
+
+		test('auto-detects compiled engine when msxsl:script present', async () => {
+			const port = parseInt(fs.readFileSync(path.join(os.homedir(), '.xslt-debugger-port'), 'utf8'), 10);
+			const stylesheet = path.resolve(__dirname, '../../TestData/Integration/xslt/tests/inline-csharp-simple.xslt');
+			const xml = path.resolve(__dirname, '../../TestData/Integration/xml/step-into-test.xml');
+			const body = JSON.stringify({ stylesheet, xml }); // no engine field
+
+			const result = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+				const req = http.request(
+					{ hostname: '127.0.0.1', port, method: 'POST', path: '/run-transform',
+					  headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } },
+					(res) => {
+						let data = '';
+						res.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+						res.on('end', () => resolve({ status: res.statusCode ?? 0, body: data }));
+					}
+				);
+				req.on('error', reject);
+				req.write(body);
+				req.end();
+			});
+
+			assert.strictEqual(result.status, 200);
+			assert.ok(result.body.includes('hello-from-csharp'), 'compiled engine should execute inline C# and return its output');
+		});
+
 		test('POST /run-transform returns 400 for invalid JSON', async () => {
 			const port = parseInt(fs.readFileSync(path.join(os.homedir(), '.xslt-debugger-port'), 'utf8'), 10);
 
