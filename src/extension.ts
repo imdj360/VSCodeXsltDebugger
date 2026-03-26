@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as http from 'http';
+import * as os from 'os';
 import { spawn } from 'child_process';
 
 const output = vscode.window.createOutputChannel('XSLT Debugger');
@@ -217,6 +219,53 @@ async function runTransform(
 	});
 }
 
+function handleRunTransform(
+	_req: http.IncomingMessage,
+	res: http.ServerResponse,
+	_adapterLocator: () => string | undefined
+): void {
+	// Implemented in Task 2
+	res.writeHead(501);
+	res.end('not yet implemented');
+}
+
+function startHttpServer(
+	context: vscode.ExtensionContext,
+	adapterLocator: () => string | undefined
+): void {
+	const portFile = path.join(os.homedir(), '.xslt-debugger-port');
+
+	const server = http.createServer((req, res) => {
+		const remote = req.socket.remoteAddress;
+		if (remote !== '127.0.0.1' && remote !== '::1' && remote !== '::ffff:127.0.0.1') {
+			res.writeHead(403);
+			res.end('forbidden');
+			return;
+		}
+
+		if (req.method === 'POST' && req.url === '/run-transform') {
+			handleRunTransform(req, res, adapterLocator);
+		} else {
+			res.writeHead(404);
+			res.end('not found');
+		}
+	});
+
+	server.listen(0, '127.0.0.1', () => {
+		const addr = server.address();
+		if (addr && typeof addr === 'object') {
+			fs.writeFileSync(portFile, String(addr.port));
+		}
+	});
+
+	context.subscriptions.push({
+		dispose: () => {
+			server.close();
+			try { fs.unlinkSync(portFile); } catch {}
+		}
+	});
+}
+
 export function activate(context: vscode.ExtensionContext) {
 	const configProvider = new XsltDebugConfigurationProvider();
 	const configRegistration = vscode.debug.registerDebugConfigurationProvider('xslt', configProvider);
@@ -229,6 +278,8 @@ export function activate(context: vscode.ExtensionContext) {
 	);
 
 	context.subscriptions.push(configRegistration, factoryRegistration, factory, runTransformCommand);
+
+	startHttpServer(context, () => factory.locateAdapter());
 }
 
 export function deactivate() { }

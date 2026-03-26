@@ -1,4 +1,8 @@
 import * as assert from 'assert';
+import * as http from 'http';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 
 // You can import and use all API from the 'vscode' module
 // as well as import your extension to test it
@@ -11,6 +15,13 @@ suite('Extension Test Suite', () => {
 	test('Sample test', () => {
 		assert.strictEqual(-1, [1, 2, 3].indexOf(5));
 		assert.strictEqual(-1, [1, 2, 3].indexOf(0));
+	});
+
+	test('HTTP Bridge - port file written on activate', () => {
+		const portFile = path.join(os.homedir(), '.xslt-debugger-port');
+		assert.ok(fs.existsSync(portFile), 'port file should exist after activation');
+		const port = parseInt(fs.readFileSync(portFile, 'utf8'), 10);
+		assert.ok(port > 0 && port < 65536, 'port should be a valid port number');
 	});
 
 	test('Inline C# compilation with using statements', () => {
