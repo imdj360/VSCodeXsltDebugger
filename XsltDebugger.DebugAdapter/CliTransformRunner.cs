@@ -57,7 +57,22 @@ internal sealed class CliTransformRunner
         // 4. Configure engine manager
         XsltEngineManager.Reset();
         XsltEngineManager.SetDebugFlags(false, options.LogLevel);
-        XsltEngineManager.OutputWriter = _outputWriter;
+
+        // Route transform result to --output file or the injected writer
+        TextWriter resultWriter;
+        StreamWriter? fileWriter = null;
+        if (options.Output != null)
+        {
+            var dir = Path.GetDirectoryName(options.Output);
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+            fileWriter = new StreamWriter(options.Output, append: false);
+            resultWriter = fileWriter;
+        }
+        else
+        {
+            resultWriter = _outputWriter;
+        }
+        XsltEngineManager.OutputWriter = resultWriter;
 
         // 5. Wire events
         var terminatedTcs = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -78,7 +93,8 @@ internal sealed class CliTransformRunner
                 .WaitAsync(TimeSpan.FromSeconds(60))
                 .ConfigureAwait(false);
 
-            await _outputWriter.FlushAsync().ConfigureAwait(false);
+            await resultWriter.FlushAsync().ConfigureAwait(false);
+            if (fileWriter != null) await fileWriter.DisposeAsync().ConfigureAwait(false);
             return exitCode;
         }
         catch (TimeoutException)
@@ -143,7 +159,12 @@ internal sealed class CliTransformRunner
                     {
                         logLevel = level; i += 2;
                     }
-                    else { i++; }
+                    else
+                    {
+                        error = $"Unrecognised log level: '{(i + 1 < args.Length ? args[i + 1] : "")}'";
+                        options = new TransformOptions { ExitCode = 2 };
+                        return false;
+                    }
                     break;
                 default:
                     i++; break;

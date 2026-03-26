@@ -203,6 +203,10 @@ async function runTransform(
 	proc.stdout.on('data', (chunk: Buffer) => channel.append(chunk.toString()));
 	proc.stderr.on('data', (chunk: Buffer) => channel.append(chunk.toString()));
 
+	proc.on('error', (err: Error) => {
+		channel.appendLine(`[xslt] Failed to start transform process: ${err.message}`);
+	});
+
 	proc.on('close', (code: number | null) => {
 		channel.appendLine('');
 		if (code === 0) {
