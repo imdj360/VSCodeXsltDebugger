@@ -205,7 +205,22 @@ Existing DAP tests untouched.
 
 ## Claude Code Hook Integration
 
-Once shipped, the hook calls the VS Code command instead of the DLL directly:
+VS Code commands cannot be triggered from shell (`code --execute-command` does not exist). The extension exposes a **localhost HTTP server** as a bridge — the hook `curl`s it, the extension runs the transform and returns the full output synchronously in the response body.
+
+### How it works
+
+1. On activation, the extension starts an HTTP server on a random port (`127.0.0.1` only) and writes the port to `~/.xslt-debugger-port`
+2. The hook reads that file, sends `POST /run-transform` with `{ "stylesheet": "...", "xml": "..." }`
+3. The extension spawns `dotnet --transform`, buffers all stdout+stderr, returns them in the HTTP response body when the process exits
+4. Claude reads the response as hook feedback and auto-fixes errors
+
+### Engine auto-detection
+
+When no `engine` field is provided, the extension inspects the stylesheet content:
+- Contains `urn:schemas-microsoft-com:xslt` namespace **and** `language="C#"` attribute → `compiled` engine
+- Otherwise → `saxonnet` engine
+
+### Hook configuration (`.claude/settings.json`)
 
 ```json
 {
@@ -213,11 +228,27 @@ Once shipped, the hook calls the VS Code command instead of the DLL directly:
     "PostToolUse": [
       {
         "matcher": "Write|Edit",
-        "command": "bash -c 'FILE=\"$TOOL_INPUT_FILE\"; if [[ \"$FILE\" == *.xslt ]]; then code --execute-command xslt.runTransform; fi'"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'FILE=$(echo \"$CLAUDE_TOOL_INPUT\" | jq -r \".file_path // .path // empty\" 2>/dev/null); if [[ \"$FILE\" == *.xslt || \"$FILE\" == *.xsl ]]; then PORT=$(cat ~/.xslt-debugger-port 2>/dev/null); if [[ -n \"$PORT\" ]]; then curl -s -X POST \"http://127.0.0.1:$PORT/run-transform\" -H \"Content-Type: application/json\" -d \"{\\\"stylesheet\\\": \\\"$FILE\\\", \\\"xml\\\": \\\"${FILE%.*}-input.xml\\\"}\"; fi; fi'",
+            "timeout": 60
+          }
+        ]
       }
     ]
   }
 }
 ```
 
-After every XSLT edit: VS Code runs the transform, Output panel shows trace + result, Claude reads it and auto-fixes.
+### Response codes
+
+| Code | Meaning |
+|------|---------|
+| 200 | Transform succeeded — body contains output + trace |
+| 400 | Bad request (invalid JSON, missing fields) |
+| 404 | Stylesheet or XML file not found |
+| 500 | Transform process failed (non-zero exit) or spawn error |
+| 503 | Adapter DLL not found — run `dotnet build` |
+
+After every `.xslt`/`.xsl` edit: the extension runs the transform, the Output panel shows trace + result, and Claude reads the response body to auto-fix errors.
