@@ -41,7 +41,6 @@ dotnet test XsltDebugger.Tests/XsltDebugger.Tests.csproj -v minimal
 echo ""
 echo "6. Updating package.json for macOS..."
 cp package.json package.json.backup
-sed -i '' 's/"name": "xslt-debugger"/"name": "xslt-debugger-darwin"/' package.json
 sed -i '' 's/"displayName": "XSLT Debugger"/"displayName": "XSLT Debugger for macOS-arm64"/' package.json
 
 # Step 6: Remove all IKVM platforms except osx-arm64
@@ -120,7 +119,6 @@ dotnet test XsltDebugger.Tests/XsltDebugger.Tests.csproj -v minimal
 echo ""
 echo "15. Updating package.json for Windows..."
 cp package.json package.json.backup
-sed -i '' 's/"name": "xslt-debugger"/"name": "xslt-debugger-windows"/' package.json
 sed -i '' 's/"displayName": "XSLT Debugger"/"displayName": "XSLT Debugger (Windows)"/' package.json
 
 # Step 15: Remove all IKVM platforms except win-x64
