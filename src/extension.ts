@@ -1,8 +1,18 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import { spawn } from 'child_process';
 
 const output = vscode.window.createOutputChannel('XSLT Debugger');
+
+let transformOutput: vscode.OutputChannel | undefined;
+
+function getTransformOutput(): vscode.OutputChannel {
+	if (!transformOutput) {
+		transformOutput = vscode.window.createOutputChannel('XSLT Transform');
+	}
+	return transformOutput;
+}
 
 class XsltDebugConfigurationProvider implements vscode.DebugConfigurationProvider {
 	provideDebugConfigurations(folder: vscode.WorkspaceFolder | undefined): vscode.DebugConfiguration[] {
@@ -112,7 +122,7 @@ class XsltDebugAdapterDescriptorFactory implements vscode.DebugAdapterDescriptor
 		}
 	}
 
-	private locateAdapter(): string | undefined {
+	public locateAdapter(): string | undefined {
 		const candidates = [
 			path.join('XsltDebugger.DebugAdapter', 'bin', 'Debug', 'net8.0', 'XsltDebugger.DebugAdapter.dll'),
 			path.join('XsltDebugger.DebugAdapter', 'bin', 'Debug', 'net9.0', 'XsltDebugger.DebugAdapter.dll'),
@@ -132,6 +142,77 @@ class XsltDebugAdapterDescriptorFactory implements vscode.DebugAdapterDescriptor
 	}
 }
 
+async function runTransform(
+	context: vscode.ExtensionContext,
+	adapterLocator: () => string | undefined
+): Promise<void> {
+	// Resolve stylesheet
+	const editor = vscode.window.activeTextEditor;
+	let stylesheetPath: string | undefined;
+	if (editor && /\.(xslt|xsl)$/i.test(editor.document.fileName)) {
+		stylesheetPath = editor.document.fileName;
+	} else {
+		const picked = await vscode.window.showOpenDialog({
+			canSelectMany: false,
+			filters: { 'XSLT Stylesheets': ['xslt', 'xsl'] },
+			title: 'Select XSLT Stylesheet'
+		});
+		stylesheetPath = picked?.[0]?.fsPath;
+	}
+	if (!stylesheetPath) {
+		return;
+	}
+
+	// Resolve XML input — try <stem>-input.xml or <stem>.xml alongside the stylesheet
+	const stem = stylesheetPath.replace(/\.(xslt|xsl)$/i, '');
+	const candidates = [`${stem}-input.xml`, `${stem}.xml`].filter(p => fs.existsSync(p));
+	let xmlPath: string | undefined = candidates[0];
+	if (!xmlPath) {
+		const picked = await vscode.window.showOpenDialog({
+			canSelectMany: false,
+			filters: { 'XML Documents': ['xml'] },
+			title: 'Select Input XML Document'
+		});
+		xmlPath = picked?.[0]?.fsPath;
+	}
+	if (!xmlPath) {
+		return;
+	}
+
+	// Locate adapter DLL
+	const adapterDll = adapterLocator();
+	if (!adapterDll) {
+		return; // adapterLocator already shows an error message
+	}
+
+	const channel = getTransformOutput();
+	channel.clear();
+	channel.show(true);
+	channel.appendLine(`[xslt] Running transform: ${path.basename(stylesheetPath)}`);
+	channel.appendLine(`[xslt] Input: ${xmlPath}`);
+	channel.appendLine('');
+
+	const proc = spawn('dotnet', [
+		adapterDll,
+		'--transform',
+		'--stylesheet', stylesheetPath,
+		'--xml', xmlPath,
+		'--log-level', 'trace'
+	], { cwd: path.dirname(adapterDll) });
+
+	proc.stdout.on('data', (chunk: Buffer) => channel.append(chunk.toString()));
+	proc.stderr.on('data', (chunk: Buffer) => channel.append(chunk.toString()));
+
+	proc.on('close', (code: number | null) => {
+		channel.appendLine('');
+		if (code === 0) {
+			channel.appendLine('[xslt] Transform succeeded.');
+		} else {
+			channel.appendLine(`[xslt] Transform failed (exit code ${code ?? 'unknown'}).`);
+		}
+	});
+}
+
 export function activate(context: vscode.ExtensionContext) {
 	const configProvider = new XsltDebugConfigurationProvider();
 	const configRegistration = vscode.debug.registerDebugConfigurationProvider('xslt', configProvider);
@@ -139,7 +220,11 @@ export function activate(context: vscode.ExtensionContext) {
 	const factory = new XsltDebugAdapterDescriptorFactory(context);
 	const factoryRegistration = vscode.debug.registerDebugAdapterDescriptorFactory('xslt', factory);
 
-	context.subscriptions.push(configRegistration, factoryRegistration, factory);
+	const runTransformCommand = vscode.commands.registerCommand('xslt.runTransform', () =>
+		runTransform(context, () => factory.locateAdapter())
+	);
+
+	context.subscriptions.push(configRegistration, factoryRegistration, factory, runTransformCommand);
 }
 
 export function deactivate() { }
