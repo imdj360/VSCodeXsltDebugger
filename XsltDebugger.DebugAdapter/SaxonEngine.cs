@@ -264,13 +264,27 @@ public class SaxonEngine : BaseXsltEngine
                 var stylesheetFileName = Path.GetFileNameWithoutExtension(_currentStylesheet);
                 var outPath = Path.Combine(outDir, $"{stylesheetFileName}.out.xml");
 
-                if (XsltEngineManager.IsLogEnabled)
+                if (XsltEngineManager.OutputWriter != null)
                 {
-                    XsltEngineManager.NotifyOutput($"Writing transform output to: {outPath}");
+                    // CLI mode: write result to the provided TextWriter (e.g. Console.Out)
+                    if (XsltEngineManager.IsLogEnabled)
+                    {
+                        XsltEngineManager.NotifyOutput("[log] Writing transform output to stdout.");
+                    }
+                    if (XsltEngineManager.TraceEnabled)
+                    {
+                        XsltEngineManager.NotifyOutput("[trace] Saxon.Start: run()");
+                    }
+                    var serializer = _processor.NewSerializer(XsltEngineManager.OutputWriter);
+                    _transformer.Run(serializer);
                 }
-
-                using (var writer = new StreamWriter(outPath))
+                else
                 {
+                    if (XsltEngineManager.IsLogEnabled)
+                    {
+                        XsltEngineManager.NotifyOutput($"Writing transform output to: {outPath}");
+                    }
+                    using var writer = new StreamWriter(outPath);
                     var serializer = _processor.NewSerializer(writer);
                     if (XsltEngineManager.TraceEnabled)
                     {
