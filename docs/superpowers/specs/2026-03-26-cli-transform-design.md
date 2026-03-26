@@ -1,14 +1,19 @@
 # CLI Transform Mode — Design Spec
 
 **Date:** 2026-03-26
-**Feature:** `--transform` CLI flag for headless XSLT execution
+**Feature:** Headless XSLT transform via VS Code command + `--transform` adapter flag
 **Status:** Approved
 
 ---
 
 ## Summary
 
-Add a `--transform` CLI mode to `XsltDebugger.DebugAdapter` that runs an XSLT transform without the DAP protocol, writes the result to stdout (or a file), writes trace/error output to stderr, and exits with a meaningful code. Enables automation workflows — Claude Code post-hooks, CI/CD pipelines, shell scripts.
+Add a "Run Transform" capability that executes an XSLT transform without starting a debug session. Implemented as:
+
+1. **`--transform` flag on the .NET adapter** — headless execution, no DAP protocol, result to stdout, trace/errors to stderr
+2. **`xslt.runTransform` VS Code command** — user-facing entry point; locates the adapter DLL (reusing `locateAdapter()`), spawns it with `--transform`, and shows output in the VS Code Output panel
+
+The adapter DLL remains an internal implementation detail — users never call it directly.
 
 ---
 
@@ -23,52 +28,70 @@ DAP (Debug Adapter Protocol) is only the *communication layer* between VS Code a
 ### Flow
 
 ```
-Program.Main(args)
-  ├── "--transform" present?
-  │     YES → CliTransformRunner.RunAsync() → exit with code
-  │     NO  → existing DAP server flow (unchanged)
-
-CliTransformRunner
-  ├── parse & validate args
-  ├── XsltEngineFactory.Create(engine)
-  ├── XsltEngineManager.SetDebugFlags(debug: false, logLevel: trace)
-  ├── wire EngineOutput  → stderr
-  ├── wire transform result → stdout / --output file
-  ├── wire EngineTerminated → capture exit code
-  ├── engine.SetBreakpoints([])   // no breakpoints — never pauses
-  └── engine.StartAsync(stylesheet, xml, stopOnEntry: false)
+User runs "XSLT: Run Transform" command (or Claude Code hook triggers it)
+       ↓
+extension.ts — xslt.runTransform command handler
+  ├── locateAdapter()          // reuse existing DLL finder
+  ├── resolve stylesheet + xml from active editor / launch.json
+  ├── spawn: dotnet adapter.dll --transform --stylesheet X --xml Y --log-level trace
+  └── pipe stdout + stderr → VS Code Output panel ("XSLT Transform")
+       ↓
+XsltDebugger.DebugAdapter (--transform mode)
+  ├── CliTransformRunner.RunAsync()
+  ├── engine.StartAsync(stylesheet, xml, stopOnEntry: false)  // no breakpoints
+  ├── stdout → transform result (XML/HTML/text)
+  └── stderr → trace log + errors + xsl:message output
+       ↓
+Output panel shows combined result
+Claude reads it via hook feedback → auto-fixes errors
 ```
 
 ---
 
 ## Components
 
-### `CliTransformRunner` (new file)
+### 1. `xslt.runTransform` VS Code Command (TypeScript — `extension.ts`)
 
-Single responsibility: own the CLI transform lifecycle.
+Registered in `activate()` alongside existing debug registrations.
 
-**Constructor:** accepts `string[] args`
+**Handler:**
+1. Find active `.xslt` file (active editor, or prompt if none open)
+2. Resolve input XML — try `${file-stem}-input.xml` alongside the stylesheet, else prompt
+3. `locateAdapter()` — reuse existing function, no changes
+4. Create/get Output channel `"XSLT Transform"`
+5. Spawn: `dotnet <adapterDll> --transform --stylesheet <path> --xml <path> --log-level trace`
+6. Pipe stdout + stderr to Output channel
+7. Show Output panel, reveal on completion
+8. Display exit code message: `"Transform succeeded"` or `"Transform failed (exit N)"`
+
+**`package.json` additions:**
+- `contributes.commands`: `{ "command": "xslt.runTransform", "title": "XSLT: Run Transform" }`
+- Keyboard shortcut (optional): `Ctrl+Shift+T` / `Cmd+Shift+T` scoped to XSLT files
+
+### 2. `CliTransformRunner` (new C# file — `XsltDebugger.DebugAdapter`)
+
+Single responsibility: own the headless transform lifecycle.
 
 **`RunAsync() → Task<int>`:**
-1. Parse args (see CLI Args below)
-2. If `--launch-config` provided, load and merge config (CLI args override)
-3. Validate stylesheet and xml paths exist → exit 3 if not
+1. Parse args (`--stylesheet`, `--xml`, `--engine`, `--output`, `--log-level`, `--launch-config`, `--config-name`)
+2. If `--launch-config` provided, load and merge — CLI args override launch.json values
+3. Validate stylesheet + xml exist → exit 3 if not
 4. Validate engine name → exit 2 if unrecognised
-5. Create engine via `XsltEngineFactory`
-6. `XsltEngineManager.SetDebugFlags(debug: false, logLevel: LogLevel.Trace)`
-7. Subscribe to `XsltEngineManager.EngineOutput` → stderr
-8. Subscribe to `XsltEngineManager.EngineTerminated` to signal completion
+5. `XsltEngineManager.SetDebugFlags(debug: false, logLevel: LogLevel.Trace)`
+6. Set `XsltEngineManager.OutputWriter = Console.Out` (or `StreamWriter` for `--output`)
+7. Subscribe `XsltEngineManager.EngineOutput` → `Console.Error`
+8. Subscribe `XsltEngineManager.EngineTerminated` → signal completion + capture exit code
 9. `engine.SetBreakpoints([])`
 10. `engine.StartAsync(stylesheet, xml, stopOnEntry: false)`
-11. Await completion, return exit code
+11. Await, return exit code
 
-### Engine Output Path — Required Change
+### 3. `XsltEngineManager.OutputWriter` (new property)
 
-Currently, when `outPath` is empty the engines skip writing output (`XsltCompiledEngine.cs:215-218`, `SaxonEngine.cs` same pattern). For CLI mode, stdout must be a valid output target.
+**Required engine fix:** Currently both engines skip writing output when `outPath` is empty (`XsltCompiledEngine.cs:215-218`, `SaxonEngine.cs` same). For CLI mode, stdout must be a valid target.
 
-**Fix:** Add `XsltEngineManager.OutputWriter` (`TextWriter?`) property. When set, engines write transform result to it instead of the file path. `CliTransformRunner` sets it to `Console.Out` (or a `StreamWriter` for `--output`). DAP mode never sets it — existing behaviour unchanged.
+Add `public static TextWriter? OutputWriter` to `XsltEngineManager`. Both engines check: if `OutputWriter != null`, write result there; else use file path as before. DAP mode never sets this — existing behaviour unchanged.
 
-### `Program.cs` change (minimal)
+### 4. `Program.cs` change (minimal)
 
 ```csharp
 if (args.Contains("--transform"))
@@ -79,7 +102,7 @@ if (args.Contains("--transform"))
 
 ---
 
-## CLI Arguments
+## CLI Arguments (adapter internal)
 
 | Arg | Required | Description |
 |-----|----------|-------------|
@@ -97,10 +120,10 @@ if (args.Contains("--transform"))
 ### Launch Config Support
 
 When `--launch-config` + `--config-name` are both provided:
-- Parse the JSON, find config by `name` field
+- Parse JSON, find config by `name` field
 - Extract `engine`, `stylesheet`, `xml`, `logLevel`
 - Resolve `${workspaceFolder}` → directory containing `.vscode/`
-- CLI args take precedence over launch.json values if both present
+- CLI args override launch.json values
 
 ---
 
@@ -111,7 +134,7 @@ When `--launch-config` + `--config-name` are both provided:
 | stdout | Transform result (XML, HTML, or text per `xsl:output`) |
 | stderr | Errors, `xsl:message` output, trace log events |
 
-No DAP protocol output — when `--transform` is present, DAP is never initialised.
+Both are piped to the VS Code Output panel by the command handler.
 
 ---
 
@@ -132,16 +155,12 @@ No DAP protocol output — when `--transform` is present, DAP is never initialis
 |-------|----------------------|
 | `none` | Nothing (only fatal errors) |
 | `log` | Started, compiled, ended events |
-| `trace` | Execution flow, template entries, breakpoint positions (**default**) |
+| `trace` | Execution flow, template entries (**default**) |
 | `traceall` | Full XPath value tracking, variable values at every step |
-
-Default is `trace` — enough context for Claude to diagnose and auto-fix errors without being noisy.
 
 ---
 
 ## Engine Selection
-
-Same auto-detection logic as existing DAP mode:
 
 | `--engine` value | Engine used |
 |-----------------|-------------|
@@ -153,18 +172,24 @@ Same auto-detection logic as existing DAP mode:
 
 ## Testing
 
-Six new test cases in `XsltDebugger.Tests`, using existing TestData fixtures:
+### Adapter tests (xUnit — `XsltDebugger.Tests`)
 
 | Test | Engine | Validates |
 |------|--------|-----------|
 | Basic compiled transform | compiled | stdout has correct XML, exit 0 |
 | XSLT 3.0 transform | saxonnet | stdout has correct XML, exit 0 |
 | Inline C# (`msxsl:script`) | compiled | C# executes, output correct, exit 0 |
-| Bad XSLT (syntax error) | either | exit 1, error message on stderr |
-| Missing stylesheet file | either | exit 3 |
+| Bad XSLT (syntax error) | either | exit 1, error on stderr |
+| Missing stylesheet | either | exit 3 |
 | Launch config mode | either | reads launch.json, resolves `${workspaceFolder}`, runs correctly |
 
-Existing DAP tests are untouched — the `Program.cs` branch is the only shared code path.
+Existing DAP tests untouched.
+
+### Extension tests (TypeScript)
+
+- Command registered and appears in command palette
+- Spawns adapter with correct `--transform` args
+- Output panel created and revealed
 
 ---
 
@@ -172,14 +197,15 @@ Existing DAP tests are untouched — the `Program.cs` branch is the only shared 
 
 - No interactive mode
 - No watch mode (hooks handle re-triggering)
-- No output diffing (caller handles comparison)
+- No output diffing
 - No new NuGet dependencies
+- No direct DLL invocation by users
 
 ---
 
 ## Claude Code Hook Integration
 
-Once shipped, add to `.claude/settings.json` in any XSLT project:
+Once shipped, the hook calls the VS Code command instead of the DLL directly:
 
 ```json
 {
@@ -187,11 +213,11 @@ Once shipped, add to `.claude/settings.json` in any XSLT project:
     "PostToolUse": [
       {
         "matcher": "Write|Edit",
-        "command": "bash -c 'FILE=\"$TOOL_INPUT_FILE\"; if [[ \"$FILE\" == *.xslt ]]; then dotnet /path/to/XsltDebugger.DebugAdapter.dll --transform --log-level trace --stylesheet \"$FILE\" --xml \"${FILE%.xslt}-input.xml\" 2>&1; fi'"
+        "command": "bash -c 'FILE=\"$TOOL_INPUT_FILE\"; if [[ \"$FILE\" == *.xslt ]]; then code --execute-command xslt.runTransform; fi'"
       }
     ]
   }
 }
 ```
 
-After every XSLT edit: transform runs, trace output surfaces on stderr, Claude reads it and auto-fixes.
+After every XSLT edit: VS Code runs the transform, Output panel shows trace + result, Claude reads it and auto-fixes.
