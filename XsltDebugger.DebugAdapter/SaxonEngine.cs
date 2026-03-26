@@ -266,10 +266,10 @@ public class SaxonEngine : BaseXsltEngine
 
                 if (XsltEngineManager.OutputWriter != null)
                 {
-                    // CLI mode: write result to the provided TextWriter (e.g. Console.Out)
+                    // CLI mode: write result to the provided TextWriter (stdout or a file)
                     if (XsltEngineManager.IsLogEnabled)
                     {
-                        XsltEngineManager.NotifyOutput("[log] Writing transform output to stdout.");
+                        XsltEngineManager.NotifyOutput($"[log] Writing transform output to {XsltEngineManager.OutputWriterDescription}.");
                     }
                     if (XsltEngineManager.TraceEnabled)
                     {

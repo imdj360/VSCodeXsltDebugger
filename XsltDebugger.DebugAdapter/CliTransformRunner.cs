@@ -67,10 +67,12 @@ internal sealed class CliTransformRunner
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
             fileWriter = new StreamWriter(options.Output, append: false);
             resultWriter = fileWriter;
+            XsltEngineManager.OutputWriterDescription = options.Output;
         }
         else
         {
             resultWriter = _outputWriter;
+            XsltEngineManager.OutputWriterDescription = "stdout";
         }
         XsltEngineManager.OutputWriter = resultWriter;
 

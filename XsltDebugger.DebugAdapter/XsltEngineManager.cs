@@ -24,9 +24,15 @@ public static class XsltEngineManager
 
     /// <summary>
     /// When set, engines write transform result output here instead of the default file path.
-    /// Used by CliTransformRunner to route output to stdout.
+    /// Used by CliTransformRunner to route output to stdout or a file.
     /// </summary>
     public static TextWriter? OutputWriter { get; set; }
+
+    /// <summary>
+    /// Human-readable description of where OutputWriter points (e.g. "stdout" or a file path).
+    /// Used in log messages so engines don't say "stdout" when writing to a file.
+    /// </summary>
+    public static string OutputWriterDescription { get; set; } = "stdout";
 
     public static bool DebugEnabled { get; private set; } = true;
     public static LogLevel CurrentLogLevel { get; private set; } = LogLevel.Log;
@@ -158,6 +164,7 @@ public static class XsltEngineManager
         ClearVariables();
         ClearStylesheetNamespaces();
         OutputWriter = null;
+        OutputWriterDescription = "stdout";
     }
 }
 

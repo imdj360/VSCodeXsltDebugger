@@ -121,4 +121,43 @@ public class CliTransformRunnerTests
         exitCode.Should().Be(0);
         writer.ToString().Should().NotBeNullOrWhiteSpace();
     }
+
+    [Fact]
+    public async Task RunAsync_OutputFile_CreatesFileWithContent()
+    {
+        var stylesheet = TestData("Integration/xslt/compiled/sample.xslt");
+        var xml = TestData("Integration/xml/sample.xml");
+        var outputFile = Path.Combine(Path.GetTempPath(), $"xslt-test-{Guid.NewGuid()}.xml");
+        var writer = new StringWriter();
+
+        try
+        {
+            var args = new[] { "--transform", "--engine", "compiled", "--stylesheet", stylesheet, "--xml", xml, "--output", outputFile };
+            var runner = new CliTransformRunner(args, writer);
+            var exitCode = await runner.RunAsync();
+
+            exitCode.Should().Be(0);
+            File.Exists(outputFile).Should().BeTrue();
+            (await File.ReadAllTextAsync(outputFile)).Should().NotBeNullOrWhiteSpace();
+            writer.ToString().Should().BeEmpty(); // nothing written to the injected writer
+        }
+        finally
+        {
+            if (File.Exists(outputFile)) File.Delete(outputFile);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_InvalidLogLevel_ReturnsExitCode2()
+    {
+        var stylesheet = TestData("Integration/xslt/compiled/sample.xslt");
+        var xml = TestData("Integration/xml/sample.xml");
+        var writer = new StringWriter();
+
+        var args = new[] { "--transform", "--engine", "compiled", "--stylesheet", stylesheet, "--xml", xml, "--log-level", "notalevel" };
+        var runner = new CliTransformRunner(args, writer);
+        var exitCode = await runner.RunAsync();
+
+        exitCode.Should().Be(2);
+    }
 }

@@ -213,10 +213,10 @@ public class XsltCompiledEngine : BaseXsltEngine
 
                 if (XsltEngineManager.OutputWriter != null)
                 {
-                    // CLI mode: write result to the provided TextWriter (e.g. Console.Out)
+                    // CLI mode: write result to the provided TextWriter (stdout or a file)
                     if (XsltEngineManager.IsLogEnabled)
                     {
-                        XsltEngineManager.NotifyOutput("[log] Writing transform output to stdout.");
+                        XsltEngineManager.NotifyOutput($"[log] Writing transform output to {XsltEngineManager.OutputWriterDescription}.");
                     }
                     var xmlWriterSettings = xslt.OutputSettings ?? new XmlWriterSettings { Indent = true };
                     xmlWriterSettings = xmlWriterSettings.Clone();
