@@ -251,10 +251,20 @@ function startHttpServer(
 		}
 	});
 
+	server.on('error', (err: Error) => {
+		output.appendLine(`[xslt] HTTP server error: ${err.message}`);
+	});
+
 	server.listen(0, '127.0.0.1', () => {
 		const addr = server.address();
 		if (addr && typeof addr === 'object') {
-			fs.writeFileSync(portFile, String(addr.port));
+			try {
+				fs.writeFileSync(portFile, String(addr.port));
+			} catch (err) {
+				output.appendLine(`[xslt] Failed to write port file: ${(err as Error).message}`);
+			}
+		} else {
+			output.appendLine('[xslt] HTTP server started but address is unavailable');
 		}
 	});
 
