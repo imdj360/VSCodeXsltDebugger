@@ -264,7 +264,8 @@ function handleRunTransform(
 		channel.show(true);
 		channel.appendLine(`[xslt] HTTP trigger: ${path.basename(stylesheet)}`);
 
-		let output = '';
+		let outputBuffer = '';
+		let responded = false;
 		const proc = spawn('dotnet', [
 			adapterDll,
 			'--transform',
@@ -275,16 +276,18 @@ function handleRunTransform(
 
 		proc.stdout.on('data', (chunk: Buffer) => {
 			const text = chunk.toString();
-			output += text;
+			outputBuffer += text;
 			channel.append(text);
 		});
 		proc.stderr.on('data', (chunk: Buffer) => {
 			const text = chunk.toString();
-			output += text;
+			outputBuffer += text;
 			channel.append(text);
 		});
 
 		proc.on('error', (err: Error) => {
+			if (responded) { return; }
+			responded = true;
 			const msg = `process error: ${err.message}`;
 			channel.appendLine(msg);
 			res.writeHead(500);
@@ -292,11 +295,13 @@ function handleRunTransform(
 		});
 
 		proc.on('close', (code: number | null) => {
-			const summary = `\n[xslt] exit code: ${code ?? 'unknown'}`;
-			output += summary;
+			if (responded) { return; }
+			responded = true;
+			const summary = `[xslt] exit code: ${code ?? 'unknown'}`;
+			outputBuffer += '\n' + summary;
 			channel.appendLine(summary);
 			res.writeHead(200, { 'Content-Type': 'text/plain' });
-			res.end(output);
+			res.end(outputBuffer);
 		});
 	});
 }
