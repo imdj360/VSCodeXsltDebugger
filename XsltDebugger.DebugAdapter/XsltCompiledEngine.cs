@@ -208,16 +208,25 @@ public class XsltCompiledEngine : BaseXsltEngine
                 var stylesheetFileName = Path.GetFileNameWithoutExtension(_currentStylesheet);
                 var outPath = Path.Combine(outDir, $"{stylesheetFileName}.out.xml");
 
-                if (XsltEngineManager.IsLogEnabled)
+                if (XsltEngineManager.OutputWriter != null)
                 {
-                    XsltEngineManager.NotifyOutput($"Writing transform output to: {outPath}");
-                }
-                if (string.IsNullOrWhiteSpace(outPath))
-                {
-                    XsltEngineManager.NotifyOutput("Output path for transform is empty; skipping write.");
+                    // CLI mode: write result to the provided TextWriter (e.g. Console.Out)
+                    if (XsltEngineManager.IsLogEnabled)
+                    {
+                        XsltEngineManager.NotifyOutput("[log] Writing transform output to stdout.");
+                    }
+                    var xmlWriterSettings = xslt.OutputSettings ?? new XmlWriterSettings { Indent = true };
+                    xmlWriterSettings = xmlWriterSettings.Clone();
+                    xmlWriterSettings.CloseOutput = false;
+                    using var xmlWriter = XmlWriter.Create(XsltEngineManager.OutputWriter, xmlWriterSettings);
+                    xslt.Transform(xmlReader, args, xmlWriter);
                 }
                 else
                 {
+                    if (XsltEngineManager.IsLogEnabled)
+                    {
+                        XsltEngineManager.NotifyOutput($"Writing transform output to: {outPath}");
+                    }
                     using var fs = File.Create(outPath);
                     using var writer = XmlWriter.Create(fs, xslt.OutputSettings ?? new XmlWriterSettings { Indent = true });
                     xslt.Transform(xmlReader, args, writer);
