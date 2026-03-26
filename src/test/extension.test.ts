@@ -181,6 +181,30 @@ suite('Extension Test Suite', () => {
 			assert.strictEqual(result.status, 404);
 		});
 
+		test('POST /run-transform returns 500 when transform fails', async () => {
+			const stylesheet = path.resolve(__dirname, '../../TestData/Integration/xslt/tests/InvalidFunctionCall.xslt');
+			const xml = path.resolve(__dirname, '../../TestData/Integration/xml/step-into-test.xml');
+			const body = JSON.stringify({ stylesheet, xml });
+
+			const result = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+				const req = http.request(
+					{ hostname: '127.0.0.1', port: bridgePort, method: 'POST', path: '/run-transform',
+					  headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } },
+					(res) => {
+						let data = '';
+						res.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+						res.on('end', () => resolve({ status: res.statusCode ?? 0, body: data }));
+					}
+				);
+				req.on('error', reject);
+				req.write(body);
+				req.end();
+			});
+
+			assert.strictEqual(result.status, 500);
+			assert.ok(result.body.length > 0, 'response body should contain error output');
+		});
+
 		test('GET /run-transform returns 404', async () => {
 			const port = bridgePort;
 

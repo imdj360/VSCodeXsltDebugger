@@ -16,6 +16,7 @@
     "Other"
   ],
   "activationEvents": [
+    "onStartupFinished",
     "onDebugInitialConfigurations:xslt",
     "onDebugResolve:xslt",
     "onCommand:xslt.runTransform"
