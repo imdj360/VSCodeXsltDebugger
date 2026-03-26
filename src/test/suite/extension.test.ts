@@ -7,9 +7,9 @@ suite('XSLT Debugger End-to-End', function () {
   this.timeout(60000);
 
   test('should launch and run XSLT debug session with inline C#', async () => {
-    const workspaceFolder = vscode.workspace.workspaceFolders?.[0].uri.fsPath || '';
-    const stylesheet = path.join(workspaceFolder, 'TestData', 'Integration', 'xslt', 'compiled', 'sample-inline-cs.xslt');
-    const outFile = path.join(workspaceFolder, 'TestData', 'Integration', 'xslt', 'compiled', 'out', 'sample-inline-cs.out.xml');
+    const repoRoot = path.resolve(__dirname, '..', '..', '..');
+    const stylesheet = path.join(repoRoot, 'TestData', 'Integration', 'xslt', 'compiled', 'sample-inline-cs.xslt');
+    const outFile = path.join(repoRoot, 'TestData', 'Integration', 'xslt', 'compiled', 'out', 'sample-inline-cs.out.xml');
 
     // Remove stale output file before run
     if (fs.existsSync(outFile)) { fs.unlinkSync(outFile); }
@@ -19,7 +19,7 @@ suite('XSLT Debugger End-to-End', function () {
       request: 'launch',
       name: 'Debug XSLT (.NET Hybrid)',
       stylesheet,
-      xml: path.join(workspaceFolder, 'TestData', 'Integration', 'xml', 'sample.xml'),
+      xml: path.join(repoRoot, 'TestData', 'Integration', 'xml', 'sample.xml'),
       engine: 'compiled'
     };
 
