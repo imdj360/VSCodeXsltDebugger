@@ -78,7 +78,8 @@ echo "   IKVM platforms remaining: $IKVM_COUNT (should be 1)"
 # Step 9: Package with --no-dependencies to skip prepublish
 echo ""
 echo "10. Packaging macOS extension (darwin-arm64)..."
-npx @vscode/vsce package --target darwin-arm64 --no-dependencies
+VERSION=$(node -p "require('./package.json').version")
+npx @vscode/vsce package --target darwin-arm64 --no-dependencies --out "xsltdebugger-darwin-arm64-${VERSION}.vsix"
 
 # Step 10: Restore original package.json
 echo ""
@@ -159,7 +160,8 @@ echo "   IKVM platforms remaining: $IKVM_COUNT (should be 1)"
 # Step 18: Package with --no-dependencies to skip prepublish
 echo ""
 echo "19. Packaging Windows extension (win32-x64)..."
-npx @vscode/vsce package --target win32-x64 --no-dependencies
+VERSION=$(node -p "require('./package.json').version")
+npx @vscode/vsce package --target win32-x64 --no-dependencies --out "xsltdebugger-windows-win32-x64-${VERSION}.vsix"
 
 # Step 19: Restore original package.json
 echo ""
