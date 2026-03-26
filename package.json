@@ -1,9 +1,9 @@
 {
-  "name": "xsltdebugger",
+  "name": "xslt-debugger",
   "displayName": "XSLT Debugger",
   "description": "A VS Code extension for debugging XSLT using a .NET Debug Adapter.",
   "version": "1.0.3",
-  "publisher": "DanielJonathan",
+  "publisher": "ATO",
   "icon": "icon.png",
   "repository": {
     "type": "git",
@@ -16,10 +16,7 @@
     "Other"
   ],
   "activationEvents": [
-    "onStartupFinished",
-    "onDebugInitialConfigurations:xslt",
-    "onDebugResolve:xslt",
-    "onCommand:xslt.runTransform"
+    "onStartupFinished"
   ],
   "main": "./out/extension.js",
   "contributes": {
