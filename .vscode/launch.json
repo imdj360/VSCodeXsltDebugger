@@ -1,0 +1,109 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "xslt",
+      "request": "launch",
+      "name": "XSLT 3.0: ShipmentConf (SaxonNet)",
+      "stylesheet": "${workspaceFolder}/ShipmentConf.xslt",
+      "xml": "${workspaceFolder}/ShipmentConf.xml",
+      "engine": "saxonnet",
+      "stopOnEntry": true
+    },
+    {
+      "type": "xslt",
+      "request": "launch",
+      "name": "XSLT: Launch (log level)",
+      "stylesheet": "${workspaceFolder}/TestData/Integration/xslt/compiled/sample.xslt",
+      "xml": "${workspaceFolder}/TestData/Integration/xml/sample.xml",
+      "engine": "compiled",
+      "stopOnEntry": false,
+      "debug": true,
+      "logLevel": "log"
+    },
+    {
+      "type": "xslt",
+      "request": "launch",
+      "name": "XSLT: Launch (trace level)",
+      "stylesheet": "${workspaceFolder}/ShipmentConf.xslt",
+      "xml": "${workspaceFolder}/ShipmentConf.xml",
+      "engine": "compiled",
+      "stopOnEntry": false,
+      "debug": true,
+      "logLevel": "trace"
+    },
+    {
+      "type": "xslt",
+      "request": "launch",
+      "name": "XSLT: Launch (traceall level)",
+      "stylesheet": "${workspaceFolder}/ShipmentConf.xslt",
+      "xml": "${workspaceFolder}/ShipmentConf.xml",
+      "engine": "compiled",
+      "stopOnEntry": false,
+      "debug": true,
+      "logLevel": "traceall"
+    },
+    {
+      "type": "xslt",
+      "request": "launch",
+      "name": "XSLT: Run without debugging (silent)",
+      "stylesheet": "${workspaceFolder}/ShipmentConf.xslt",
+      "xml": "${workspaceFolder}/ShipmentConf.xml",
+      "engine": "compiled",
+      "stopOnEntry": false,
+      "debug": false,
+      "logLevel": "none"
+    },
+    {
+      "type": "xslt",
+      "request": "launch",
+      "name": "XSLT 2.0: Sample (SaxonNet)",
+      "stylesheet": "${workspaceFolder}/sample/sample-xslt2.xslt",
+      "xml": "${workspaceFolder}/sample/sample-data.xml",
+      "engine": "saxonnet",
+      "stopOnEntry": false
+    },
+    {
+      "type": "xslt",
+      "request": "launch",
+      "name": "XSLT 3.0: Sample (SaxonNet)",
+      "stylesheet": "${workspaceFolder}/sample/sample-xslt3.xslt",
+      "xml": "${workspaceFolder}/sample/sample-data.xml",
+      "engine": "saxonnet",
+      "stopOnEntry": false
+    },
+    {
+      "type": "xslt",
+      "request": "launch",
+      "name": "TEST: Variables (SaxonNet) - Debug",
+      "stylesheet": "${workspaceFolder}/sample/test-variables.xslt",
+      "xml": "${workspaceFolder}/sample/test-variables.xml",
+      "engine": "saxonnet",
+      "stopOnEntry": false,
+      "debug": true,
+      "logLevel": "trace"
+    },
+    {
+      "type": "xslt",
+      "request": "launch",
+      "name": "TEST: Step-Into (Compiled)",
+      "stylesheet": "${workspaceFolder}/TestData/Integration/step-into-test.xslt",
+      "xml": "${workspaceFolder}/TestData/Integration/step-into-test.xml",
+      "engine": "compiled",
+      "stopOnEntry": true,
+      "debug": true,
+      "logLevel": "trace"
+    },
+    {
+      "type": "xslt",
+      "request": "launch",
+      "name": "TEST: Step-Into (SaxonNet)",
+      "stylesheet": "${workspaceFolder}/TestData/Integration/step-into-test.xslt",
+      "xml": "${workspaceFolder}/TestData/Integration/step-into-test.xml",
+      "engine": "saxonnet",
+      "stopOnEntry": true,
+      "debug": true,
+      "logLevel": "trace"
+    }
+  ]
+}
