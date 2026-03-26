@@ -235,27 +235,27 @@ function handleRunTransform(
 			stylesheet = parsed.stylesheet;
 			xml = parsed.xml;
 		} catch {
-			res.writeHead(400);
-			res.end('invalid JSON body');
+			res.writeHead(400, { 'Content-Type': 'application/json' });
+			res.end(JSON.stringify({ error: 'invalid JSON body' }));
 			return;
 		}
 
 		if (!stylesheet || !xml) {
-			res.writeHead(400);
-			res.end('missing stylesheet or xml');
+			res.writeHead(400, { 'Content-Type': 'application/json' });
+			res.end(JSON.stringify({ error: 'missing stylesheet or xml' }));
 			return;
 		}
 
 		if (!fs.existsSync(stylesheet) || !fs.existsSync(xml)) {
-			res.writeHead(404);
-			res.end('stylesheet or xml file not found');
+			res.writeHead(404, { 'Content-Type': 'application/json' });
+			res.end(JSON.stringify({ error: 'stylesheet or xml file not found' }));
 			return;
 		}
 
 		const adapterDll = adapterLocator();
 		if (!adapterDll) {
-			res.writeHead(503);
-			res.end('adapter DLL not found — run dotnet build');
+			res.writeHead(503, { 'Content-Type': 'application/json' });
+			res.end(JSON.stringify({ error: 'adapter DLL not found — run dotnet build' }));
 			return;
 		}
 
@@ -290,8 +290,8 @@ function handleRunTransform(
 			responded = true;
 			const msg = `process error: ${err.message}`;
 			channel.appendLine(msg);
-			res.writeHead(500);
-			res.end(msg);
+			res.writeHead(500, { 'Content-Type': 'application/json' });
+			res.end(JSON.stringify({ error: msg }));
 		});
 
 		proc.on('close', (code: number | null) => {
@@ -315,16 +315,16 @@ function startHttpServer(
 	const server = http.createServer((req, res) => {
 		const remote = req.socket.remoteAddress;
 		if (remote !== '127.0.0.1' && remote !== '::1' && remote !== '::ffff:127.0.0.1') {
-			res.writeHead(403);
-			res.end('forbidden');
+			res.writeHead(403, { 'Content-Type': 'application/json' });
+			res.end(JSON.stringify({ error: 'forbidden' }));
 			return;
 		}
 
 		if (req.method === 'POST' && req.url === '/run-transform') {
 			handleRunTransform(req, res, adapterLocator);
 		} else {
-			res.writeHead(404);
-			res.end('not found');
+			res.writeHead(404, { 'Content-Type': 'application/json' });
+			res.end(JSON.stringify({ error: 'not found' }));
 		}
 	});
 
