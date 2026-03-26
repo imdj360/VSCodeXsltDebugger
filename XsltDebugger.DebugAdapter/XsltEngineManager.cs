@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Xml.XPath;
 
 namespace XsltDebugger.DebugAdapter;
@@ -20,6 +21,12 @@ public static class XsltEngineManager
 
     // XSLT Stylesheet namespaces (prefix -> URI mapping)
     public static Dictionary<string, string> StylesheetNamespaces { get; private set; } = new();
+
+    /// <summary>
+    /// When set, engines write transform result output here instead of the default file path.
+    /// Used by CliTransformRunner to route output to stdout.
+    /// </summary>
+    public static TextWriter? OutputWriter { get; set; }
 
     public static bool DebugEnabled { get; private set; } = true;
     public static LogLevel CurrentLogLevel { get; private set; } = LogLevel.Log;
@@ -150,6 +157,7 @@ public static class XsltEngineManager
         CurrentLogLevel = LogLevel.Log;
         ClearVariables();
         ClearStylesheetNamespaces();
+        OutputWriter = null;
     }
 }
 
