@@ -31,7 +31,7 @@ dotnet test XsltDebugger.Tests/XsltDebugger.Tests.csproj -v minimal
 echo ""
 echo "6. Updating package.json for macOS..."
 cp package.json package.json.backup
-sed -i '' 's/"name": "xsltdebugger"/"name": "xsltdebugger-darwin"/' package.json
+sed -i '' 's/"name": "xslt-debugger"/"name": "xslt-debugger-darwin"/' package.json
 sed -i '' 's/"displayName": "XSLT Debugger"/"displayName": "XSLT Debugger for macOS-arm64"/' package.json
 
 # Step 6: Remove all IKVM platforms except osx-arm64
@@ -77,6 +77,6 @@ mv package.json.backup package.json
 
 echo ""
 echo "✓ macOS package created successfully!"
-echo "  Package name: xsltdebugger-darwin"
+echo "  Package name: xslt-debugger-darwin"
 echo "  Target: darwin-arm64"
 echo ""

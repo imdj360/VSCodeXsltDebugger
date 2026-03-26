@@ -32,7 +32,7 @@ dotnet test XsltDebugger.Tests/XsltDebugger.Tests.csproj -v minimal
 echo ""
 echo "6. Updating package.json for Windows..."
 cp package.json package.json.backup
-sed -i '' 's/"name": "xsltdebugger"/"name": "xsltdebugger-windows"/' package.json
+sed -i '' 's/"name": "xslt-debugger"/"name": "xslt-debugger-windows"/' package.json
 sed -i '' 's/"displayName": "XSLT Debugger"/"displayName": "XSLT Debugger (Windows)"/' package.json
 
 # Step 6: Remove all IKVM platforms except win-x64
@@ -80,6 +80,6 @@ mv package.json.backup package.json
 
 echo ""
 echo "✓ Windows package created successfully!"
-echo "  Package name: xsltdebugger-windows"
+echo "  Package name: xslt-debugger-windows"
 echo "  Target: win32-x64"
 echo ""
