@@ -9,6 +9,19 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 // import * as myExtension from '../../extension';
 
+async function waitForPort(timeoutMs = 5000): Promise<number> {
+	const portFile = path.join(os.homedir(), '.xslt-debugger-port');
+	const deadline = Date.now() + timeoutMs;
+	while (Date.now() < deadline) {
+		if (fs.existsSync(portFile)) {
+			const port = parseInt(fs.readFileSync(portFile, 'utf8'), 10);
+			if (port > 0 && port < 65536) { return port; }
+		}
+		await new Promise(resolve => setTimeout(resolve, 50));
+	}
+	throw new Error('Timed out waiting for ~/.xslt-debugger-port — is the extension activated?');
+}
+
 suite('Extension Test Suite', () => {
 	vscode.window.showInformationMessage('Start all tests.');
 
@@ -18,22 +31,19 @@ suite('Extension Test Suite', () => {
 	});
 
 	test('HTTP Bridge - port file written on activate', async () => {
-		const portFile = path.join(os.homedir(), '.xslt-debugger-port');
-		// Poll up to 3s for the async listen callback to write the port file
-		const deadline = Date.now() + 3000;
-		while (!fs.existsSync(portFile) && Date.now() < deadline) {
-			await new Promise(resolve => setTimeout(resolve, 50));
-		}
-		assert.ok(fs.existsSync(portFile), 'port file should exist after activation');
-		const port = parseInt(fs.readFileSync(portFile, 'utf8'), 10);
+		const port = await waitForPort();
 		assert.ok(port > 0 && port < 65536, 'port should be a valid port number');
 	});
 
 	suite('HTTP Bridge', () => {
+		let bridgePort: number;
+
+		suiteSetup(async () => {
+			bridgePort = await waitForPort();
+		});
+
 		test('POST /run-transform returns transform output', async () => {
-			const portFile = path.join(os.homedir(), '.xslt-debugger-port');
-			assert.ok(fs.existsSync(portFile), 'port file must exist — is the extension activated?');
-			const port = parseInt(fs.readFileSync(portFile, 'utf8'), 10);
+			const port = bridgePort;
 
 			const stylesheet = path.resolve(__dirname, '../../TestData/Integration/xslt/tests/step-into-test-simple.xslt');
 			const xml = path.resolve(__dirname, '../../TestData/Integration/xml/step-into-test.xml');
@@ -62,7 +72,7 @@ suite('Extension Test Suite', () => {
 		});
 
 		test('auto-detects saxonnet when no msxsl:script present', async () => {
-			const port = parseInt(fs.readFileSync(path.join(os.homedir(), '.xslt-debugger-port'), 'utf8'), 10);
+			const port = bridgePort;
 			const stylesheet = path.resolve(__dirname, '../../TestData/Integration/xslt/tests/step-into-test-simple.xslt');
 			const xml = path.resolve(__dirname, '../../TestData/Integration/xml/step-into-test.xml');
 			const body = JSON.stringify({ stylesheet, xml }); // no engine field
@@ -87,7 +97,7 @@ suite('Extension Test Suite', () => {
 		});
 
 		test('auto-detects compiled engine when msxsl:script present', async () => {
-			const port = parseInt(fs.readFileSync(path.join(os.homedir(), '.xslt-debugger-port'), 'utf8'), 10);
+			const port = bridgePort;
 			const stylesheet = path.resolve(__dirname, '../../TestData/Integration/xslt/tests/inline-csharp-simple.xslt');
 			const xml = path.resolve(__dirname, '../../TestData/Integration/xml/step-into-test.xml');
 			const body = JSON.stringify({ stylesheet, xml }); // no engine field
@@ -112,7 +122,7 @@ suite('Extension Test Suite', () => {
 		});
 
 		test('POST /run-transform returns 400 for invalid JSON', async () => {
-			const port = parseInt(fs.readFileSync(path.join(os.homedir(), '.xslt-debugger-port'), 'utf8'), 10);
+			const port = bridgePort;
 
 			const result = await new Promise<{ status: number }>((resolve, reject) => {
 				const body = 'not json';
@@ -132,7 +142,7 @@ suite('Extension Test Suite', () => {
 		});
 
 		test('POST /run-transform returns 400 when stylesheet missing from body', async () => {
-			const port = parseInt(fs.readFileSync(path.join(os.homedir(), '.xslt-debugger-port'), 'utf8'), 10);
+			const port = bridgePort;
 
 			const result = await new Promise<{ status: number }>((resolve, reject) => {
 				const body = JSON.stringify({ xml: '/some/file.xml' });
@@ -152,7 +162,7 @@ suite('Extension Test Suite', () => {
 		});
 
 		test('POST /run-transform returns 404 when files do not exist', async () => {
-			const port = parseInt(fs.readFileSync(path.join(os.homedir(), '.xslt-debugger-port'), 'utf8'), 10);
+			const port = bridgePort;
 
 			const result = await new Promise<{ status: number }>((resolve, reject) => {
 				const body = JSON.stringify({ stylesheet: '/nonexistent/file.xslt', xml: '/nonexistent/input.xml' });
@@ -172,7 +182,7 @@ suite('Extension Test Suite', () => {
 		});
 
 		test('GET /run-transform returns 404', async () => {
-			const port = parseInt(fs.readFileSync(path.join(os.homedir(), '.xslt-debugger-port'), 'utf8'), 10);
+			const port = bridgePort;
 
 			const result = await new Promise<{ status: number }>((resolve, reject) => {
 				const req = http.request(
