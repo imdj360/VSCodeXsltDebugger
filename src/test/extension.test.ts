@@ -17,8 +17,13 @@ suite('Extension Test Suite', () => {
 		assert.strictEqual(-1, [1, 2, 3].indexOf(0));
 	});
 
-	test('HTTP Bridge - port file written on activate', () => {
+	test('HTTP Bridge - port file written on activate', async () => {
 		const portFile = path.join(os.homedir(), '.xslt-debugger-port');
+		// Poll up to 3s for the async listen callback to write the port file
+		const deadline = Date.now() + 3000;
+		while (!fs.existsSync(portFile) && Date.now() < deadline) {
+			await new Promise(resolve => setTimeout(resolve, 50));
+		}
 		assert.ok(fs.existsSync(portFile), 'port file should exist after activation');
 		const port = parseInt(fs.readFileSync(portFile, 'utf8'), 10);
 		assert.ok(port > 0 && port < 65536, 'port should be a valid port number');

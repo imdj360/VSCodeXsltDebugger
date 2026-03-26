@@ -268,7 +268,10 @@ function handleRunTransform(
 
 		let outputBuffer = '';
 		let responded = false;
-		const resolvedEngine = engine ?? (fs.readFileSync(stylesheet, 'utf8').includes('msxsl:script') ? 'compiled' : 'saxonnet');
+		const stylesheetContent = fs.readFileSync(stylesheet, 'utf8');
+		const hasInlineCSharp = stylesheetContent.includes('urn:schemas-microsoft-com:xslt') &&
+			/<[^>]+:script[^>]*language\s*=\s*["']C#["']/i.test(stylesheetContent);
+		const resolvedEngine = engine ?? (hasInlineCSharp ? 'compiled' : 'saxonnet');
 		const proc = spawn('dotnet', [
 			adapterDll,
 			'--transform',
@@ -304,7 +307,8 @@ function handleRunTransform(
 			const summary = `[xslt] exit code: ${code ?? 'unknown'}`;
 			outputBuffer += '\n' + summary;
 			channel.appendLine(summary);
-			res.writeHead(200, { 'Content-Type': 'text/plain' });
+			const httpStatus = code === 0 ? 200 : 500;
+			res.writeHead(httpStatus, { 'Content-Type': 'text/plain' });
 			res.end(outputBuffer);
 		});
 	});
