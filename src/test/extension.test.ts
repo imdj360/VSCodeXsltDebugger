@@ -24,6 +24,39 @@ suite('Extension Test Suite', () => {
 		assert.ok(port > 0 && port < 65536, 'port should be a valid port number');
 	});
 
+	suite('HTTP Bridge', () => {
+		test('POST /run-transform returns transform output', async () => {
+			const portFile = path.join(os.homedir(), '.xslt-debugger-port');
+			assert.ok(fs.existsSync(portFile), 'port file must exist — is the extension activated?');
+			const port = parseInt(fs.readFileSync(portFile, 'utf8'), 10);
+
+			const stylesheet = path.resolve(__dirname, '../../TestData/Integration/xslt/tests/step-into-test-simple.xslt');
+			const xml = path.resolve(__dirname, '../../TestData/Integration/xml/step-into-test.xml');
+
+			const body = JSON.stringify({ stylesheet, xml });
+
+			const result = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+				const req = http.request(
+					{
+						hostname: '127.0.0.1', port, method: 'POST', path: '/run-transform',
+						headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
+					},
+					(res) => {
+						let data = '';
+						res.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+						res.on('end', () => resolve({ status: res.statusCode ?? 0, body: data }));
+					}
+				);
+				req.on('error', reject);
+				req.write(body);
+				req.end();
+			});
+
+			assert.strictEqual(result.status, 200);
+			assert.ok(result.body.length > 0, 'response body should contain transform output');
+		});
+	});
+
 	test('Inline C# compilation with using statements', () => {
 		// This test verifies that inline C# code with using statements compiles correctly
 		// Previously this would fail due to duplicate using statements in the prelude

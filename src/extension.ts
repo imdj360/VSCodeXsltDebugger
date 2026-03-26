@@ -220,13 +220,85 @@ async function runTransform(
 }
 
 function handleRunTransform(
-	_req: http.IncomingMessage,
+	req: http.IncomingMessage,
 	res: http.ServerResponse,
-	_adapterLocator: () => string | undefined
+	adapterLocator: () => string | undefined
 ): void {
-	// Implemented in Task 2
-	res.writeHead(501);
-	res.end('not yet implemented');
+	let body = '';
+	req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+	req.on('end', () => {
+		let stylesheet: string | undefined;
+		let xml: string | undefined;
+
+		try {
+			const parsed = JSON.parse(body) as { stylesheet?: string; xml?: string };
+			stylesheet = parsed.stylesheet;
+			xml = parsed.xml;
+		} catch {
+			res.writeHead(400);
+			res.end('invalid JSON body');
+			return;
+		}
+
+		if (!stylesheet || !xml) {
+			res.writeHead(400);
+			res.end('missing stylesheet or xml');
+			return;
+		}
+
+		if (!fs.existsSync(stylesheet) || !fs.existsSync(xml)) {
+			res.writeHead(404);
+			res.end('stylesheet or xml file not found');
+			return;
+		}
+
+		const adapterDll = adapterLocator();
+		if (!adapterDll) {
+			res.writeHead(503);
+			res.end('adapter DLL not found — run dotnet build');
+			return;
+		}
+
+		const channel = getTransformOutput();
+		channel.clear();
+		channel.show(true);
+		channel.appendLine(`[xslt] HTTP trigger: ${path.basename(stylesheet)}`);
+
+		let output = '';
+		const proc = spawn('dotnet', [
+			adapterDll,
+			'--transform',
+			'--stylesheet', stylesheet,
+			'--xml', xml,
+			'--log-level', 'trace'
+		], { cwd: path.dirname(adapterDll) });
+
+		proc.stdout.on('data', (chunk: Buffer) => {
+			const text = chunk.toString();
+			output += text;
+			channel.append(text);
+		});
+		proc.stderr.on('data', (chunk: Buffer) => {
+			const text = chunk.toString();
+			output += text;
+			channel.append(text);
+		});
+
+		proc.on('error', (err: Error) => {
+			const msg = `process error: ${err.message}`;
+			channel.appendLine(msg);
+			res.writeHead(500);
+			res.end(msg);
+		});
+
+		proc.on('close', (code: number | null) => {
+			const summary = `\n[xslt] exit code: ${code ?? 'unknown'}`;
+			output += summary;
+			channel.appendLine(summary);
+			res.writeHead(200, { 'Content-Type': 'text/plain' });
+			res.end(output);
+		});
+	});
 }
 
 function startHttpServer(
