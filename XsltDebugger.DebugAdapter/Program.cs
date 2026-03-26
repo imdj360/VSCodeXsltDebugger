@@ -18,6 +18,11 @@ internal static class Program
             return 0;
         }
 
+        if (args.Contains("--transform", StringComparer.OrdinalIgnoreCase))
+        {
+            return await new CliTransformRunner(args).RunAsync().ConfigureAwait(false);
+        }
+
         using var input = Console.OpenStandardInput();
         using var output = Console.OpenStandardOutput();
 
