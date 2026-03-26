@@ -229,11 +229,13 @@ function handleRunTransform(
 	req.on('end', () => {
 		let stylesheet: string | undefined;
 		let xml: string | undefined;
+		let engine: string | undefined;
 
 		try {
-			const parsed = JSON.parse(body) as { stylesheet?: string; xml?: string };
+			const parsed = JSON.parse(body) as { stylesheet?: string; xml?: string; engine?: string };
 			stylesheet = parsed.stylesheet;
 			xml = parsed.xml;
+			engine = parsed.engine;
 		} catch {
 			res.writeHead(400, { 'Content-Type': 'application/json' });
 			res.end(JSON.stringify({ error: 'invalid JSON body' }));
@@ -266,11 +268,13 @@ function handleRunTransform(
 
 		let outputBuffer = '';
 		let responded = false;
+		const resolvedEngine = engine ?? (fs.readFileSync(stylesheet, 'utf8').includes('msxsl:script') ? 'compiled' : 'saxonnet');
 		const proc = spawn('dotnet', [
 			adapterDll,
 			'--transform',
 			'--stylesheet', stylesheet,
 			'--xml', xml,
+			'--engine', resolvedEngine,
 			'--log-level', 'trace'
 		], { cwd: path.dirname(adapterDll) });
 
