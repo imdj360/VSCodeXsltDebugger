@@ -55,6 +55,81 @@ suite('Extension Test Suite', () => {
 			assert.strictEqual(result.status, 200);
 			assert.ok(result.body.length > 0, 'response body should contain transform output');
 		});
+
+		test('POST /run-transform returns 400 for invalid JSON', async () => {
+			const port = parseInt(fs.readFileSync(path.join(os.homedir(), '.xslt-debugger-port'), 'utf8'), 10);
+
+			const result = await new Promise<{ status: number }>((resolve, reject) => {
+				const body = 'not json';
+				const req = http.request(
+					{
+						hostname: '127.0.0.1', port, method: 'POST', path: '/run-transform',
+						headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
+					},
+					(res) => { res.resume(); res.on('end', () => resolve({ status: res.statusCode ?? 0 })); }
+				);
+				req.on('error', reject);
+				req.write(body);
+				req.end();
+			});
+
+			assert.strictEqual(result.status, 400);
+		});
+
+		test('POST /run-transform returns 400 when stylesheet missing from body', async () => {
+			const port = parseInt(fs.readFileSync(path.join(os.homedir(), '.xslt-debugger-port'), 'utf8'), 10);
+
+			const result = await new Promise<{ status: number }>((resolve, reject) => {
+				const body = JSON.stringify({ xml: '/some/file.xml' });
+				const req = http.request(
+					{
+						hostname: '127.0.0.1', port, method: 'POST', path: '/run-transform',
+						headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
+					},
+					(res) => { res.resume(); res.on('end', () => resolve({ status: res.statusCode ?? 0 })); }
+				);
+				req.on('error', reject);
+				req.write(body);
+				req.end();
+			});
+
+			assert.strictEqual(result.status, 400);
+		});
+
+		test('POST /run-transform returns 404 when files do not exist', async () => {
+			const port = parseInt(fs.readFileSync(path.join(os.homedir(), '.xslt-debugger-port'), 'utf8'), 10);
+
+			const result = await new Promise<{ status: number }>((resolve, reject) => {
+				const body = JSON.stringify({ stylesheet: '/nonexistent/file.xslt', xml: '/nonexistent/input.xml' });
+				const req = http.request(
+					{
+						hostname: '127.0.0.1', port, method: 'POST', path: '/run-transform',
+						headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
+					},
+					(res) => { res.resume(); res.on('end', () => resolve({ status: res.statusCode ?? 0 })); }
+				);
+				req.on('error', reject);
+				req.write(body);
+				req.end();
+			});
+
+			assert.strictEqual(result.status, 404);
+		});
+
+		test('GET /run-transform returns 404', async () => {
+			const port = parseInt(fs.readFileSync(path.join(os.homedir(), '.xslt-debugger-port'), 'utf8'), 10);
+
+			const result = await new Promise<{ status: number }>((resolve, reject) => {
+				const req = http.request(
+					{ hostname: '127.0.0.1', port, method: 'GET', path: '/run-transform' },
+					(res) => { res.resume(); res.on('end', () => resolve({ status: res.statusCode ?? 0 })); }
+				);
+				req.on('error', reject);
+				req.end();
+			});
+
+			assert.strictEqual(result.status, 404);
+		});
 	});
 
 	test('Inline C# compilation with using statements', () => {
