@@ -2,6 +2,22 @@
 
 All notable changes to the XSLT Debugger extension will be documented in this file.
 
+## [1.0.3] - 2026-03-26
+
+### Added
+
+- **HTTP Transform Bridge**: Localhost HTTP server starts automatically on extension activation. External tools (Claude Code hooks, scripts) can trigger XSLT transforms via `POST http://127.0.0.1:$(cat ~/.xslt-debugger-port)/run-transform` with a JSON body `{ "stylesheet": "...", "xml": "..." }`. The full transform output and trace logs are returned synchronously in the response body.
+- **Auto engine detection**: When no `engine` field is provided, the extension inspects the stylesheet — selects `compiled` if inline C# is detected (`urn:schemas-microsoft-com:xslt` namespace + `language="C#"`), `saxonnet` otherwise.
+- **Claude Code hook**: `PostToolUse` hook in `.claude/settings.json` automatically triggers a transform after every `.xslt`/`.xsl` edit, feeding results back to Claude for auto-fix loops.
+- **`onStartupFinished` activation event**: Extension now activates on VS Code startup so the HTTP server is always ready.
+
+### Fixed
+
+- HTTP endpoint returns HTTP 500 (not 200) when the transform process exits with a non-zero code.
+- E2E test fixed: correct fixture paths (`TestData/Integration/`) and engine value (`compiled`), output asserted from generated file instead of DAP custom event.
+- E2E test paths now resolved from `__dirname` instead of `workspaceFolder` to avoid relative-path failures in the test runner.
+- HTTP Bridge test suite now sets a 30s timeout to handle dotnet cold-start latency and eliminate flaky 2s default timeout failures.
+
 ## [1.0.2] - 2025
 
 ### Added
